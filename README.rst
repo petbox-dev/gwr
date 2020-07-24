@@ -24,7 +24,7 @@ Simple Example
     >>> from gwr_inversion import gwr
     >>> from mpmath import mp
 
-    >>> def lap_ln_fn(s: float):
+    >>> def lap_log_fn(s: float):
     ...     # log function
     ...     return -mp.log(s) / s - 0.577216 / s
 
