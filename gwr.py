@@ -27,6 +27,7 @@ t0 = 100
 GWR(fun, t0)
 """
 
+from inspect import signature
 from functools import lru_cache
 
 import numpy as np
@@ -42,12 +43,13 @@ MACHINE_PRECISION = 15
 LOG2 = mp.log(2.0)
 
 
-def gwr(fn: Callable[[float], Any], time: Union[float, Iterable[float], np.ndarray],
-        M: int = 16, precin: Optional[int] = None) -> Any:
+def gwr(fn: Union[Callable[[float], Any], Callable[[float, int], Any]],
+        time: Union[float, Iterable[float], np.ndarray],
+        M: int = 32, precin: Optional[int] = None) -> Any:
     """
     Gives the inverse of the Laplace transform function ``fn`` for a given array
     of ``time``. The method involves the calculation of ``M`` terms of the
-    Gaver-functional. The obtained series is accelerated using    the Wynn-Rho
+    Gaver functional. The obtained series is accelerated using the Wynn-Rho
     convergence acceleration scheme.
 
     Returns a ``mp.mpf`` arbitrary-precision float number, a Sequence of
@@ -57,50 +59,81 @@ def gwr(fn: Callable[[float], Any], time: Union[float, Iterable[float], np.ndarr
     Parameters
     ----------
 
-    fn: Callable[[float], Any]
+    fn: Union[Callable[[float], Any], Callable[[float, int], Any]]
         The Laplace transformation to invert. Must take the Laplace parameter
-        as the first argument.
+        as the first argument, and optionally ``precin`` as the second argument.
+
+        The precision is necessary for any functions that are memoized,
+        otherwise the cached result will not necessarily match the input
+        ``precin``.
 
     time: Union[float, Iterable[float], np.ndarray]
         The array of time at which to evalute ``fn``.
 
     M: int = 32
-        The number of terms
+        The number of terms of the Gaver functional.
 
     precin: Optional[int] = None
         The digits of precision to use. If None (default), automatically set to
-        2.1 * M
+        ``round(2.1 * M)``.
 
+    Returns
+    -------
+    result: Union[float, Iterable[float], np.ndarray]
+        The inverted result. The type corresponds to the type of ``time``, but
+        is typed as ``Any`` to avoid the requirement for type checking in
+        calling code.
     """
+
     dps = mp.dps
-    mp.dps = 21 * M / 10 if precin is None else precin
     # mp.dps = int(2.1 * M) if precin is None else precin
+    mp.dps = round(21 * M / 10) if precin is None else precin
     # mp.dps = max(mp.dps, MACHINE_PRECISION)
 
     if not isinstance(time, Iterable):
         # should be a float, but make it a catch-all for any non-Iterable
-        return _gwr(fn, time, M, int(mp.dps))
+        try:
+            return _gwr(fn, time, M, mp.dps)
+        except Exception as e:
+            raise e
+        finally:
+            mp.dps = dps
 
     if not isinstance(time, np.ndarray):
         # evaluate any Iterable that is not an np.ndarray
-        return [_gwr(fn, t, M, int(mp.dps)) for t in time]
+        try:
+            return [_gwr(fn, t, M, mp.dps) for t in time]
+        except Exception as e:
+            raise e
+        finally:
+            mp.dps = dps
 
+    # must be an ndarray or else... !!!
     assert isinstance(time, np.ndarray), f'Unknown type for time: {type(time)}'
     if time.ndim < 1:
         # to iterate over an np.ndarray it must be a vector
-        return np.array([_gwr(fn, time.item(), M, int(mp.dps))], dtype=object)
+        try:
+            return np.array([_gwr(fn, time.item(), M, mp.dps)], dtype=object)
+        except Exception as e:
+            raise e
+        finally:
+            mp.dps = dps
 
     if time.ndim >= 2:
         # remove single-dimensional entries from any matrix
         np.squeeze(time)
         if time.ndim >= 2:
             # cannot iterate over a matrix
+            mp.dps = dps
             raise ValueError(f'Expected ndim < 2, but got {time.ndim}')
 
-    result = np.array([_gwr(fn, t, M, int(mp.dps)) for t in time], dtype=object)
-    mp.dps = dps
-    print(dps)
-    return result
+    try:
+        return np.array([_gwr(fn, t, M, mp.dps) for t in time], dtype=object)
+    except Exception as e:
+        raise e
+    finally:
+        mp.dps = dps
+
 
 @lru_cache(maxsize=None)
 def binomial(n: int, i: int, precin: int) -> float:
@@ -127,11 +160,25 @@ def fac_prod(n: int, tau: float, precin: int) -> float:
 
 
 @lru_cache(maxsize=None)
-def _gwr(fn: Callable[[float], Any], time: float, M: int = 32, precin: int = 0) -> float:
-    broken = False
-    tau = LOG2 / mp.mpf(time)
+def _gwr(fn: Union[Callable[[float], Any], Callable[[float, int], Any]],
+         time: float, M: int, precin: int) -> float:
+    """
+    GWR alorithm with memoization.
+    """
+    tau = mp.log(2.0) / mp.mpf(time)
 
-    fni: List[float] = [fn(i * tau) if i > 0 else 0 for i in range(2 * M + 1)]
+    # mypy can't type check the Callable at runtime, we must do it ourselves
+    sig = signature(fn).parameters
+    n_params = len(sig)
+
+    fni: List[float]
+    if n_params == 1:
+        fni = [fn(i * tau) if i > 0 else 0 for i in range(2 * M + 1)]  # type: ignore
+    elif n_params == 2:
+        fni = [fn(i * tau, precin) if i > 0 else 0 for i in range(2 * M + 1)]  # type: ignore
+    else:
+        raise TypeError('Too many arguments for Laplace transform. Expected 1 or 2, got '
+                        f'{n_params}. Function signature:\n{sig}')
 
     G0: List[float] = [0.0] * M
     Gp: List[float] = [0.0] * M
@@ -140,7 +187,7 @@ def _gwr(fn: Callable[[float], Any], time: float, M: int = 32, precin: int = 0) 
     for n in range(1, M + 1):
         try:
             G0[n - 1] = fac_prod(n, tau, precin) \
-            * sum(binomial_sum(n, i, precin) * fni[n + i] for i in range(n + 1))
+                * sum(binomial_sum(n, i, precin) * fni[n + i] for i in range(n + 1))
 
         except Exception as e:
             if n == 1:
@@ -153,15 +200,14 @@ def _gwr(fn: Callable[[float], Any], time: float, M: int = 32, precin: int = 0) 
     best = G0[M1 - 1]
     Gm: List[float] = [0.0] * M1
 
+    broken = False
     for k in range(M1 - 1):
         for n in range(M1 - 1 - k)[::-1]:
             try:
                 expr = G0[n + 1] - G0[n]
             except:
+                # expr = 0.0
                 broken = True
-                break
-
-            if expr == 0.0:
                 break
 
             Gp[n] = Gm[n + 1] + (k + 1) / expr
@@ -178,19 +224,21 @@ def _gwr(fn: Callable[[float], Any], time: float, M: int = 32, precin: int = 0) 
     return best
 
 
-def _gwr2(fn: Callable[[float], Any], time: float, M: int = 32, precin: int = 0) -> float:
-    broken = False
-    tau = LOG2 / mp.mpf(time)
+def _gwr_no_memo(fn: Callable[[float], Any], time: float, M: int = 32, precin: int = 0) -> float:
+    """
+    GWR alorithm without memoization. This is a near 1:1 translation from
+    Mathematica.
+    """
+    tau = mp.log(2.0) / mp.mpf(time)
 
-    # fni = np.arange(0, 2 * M + 1, dtype=object)
-    # for i, n in enumerate(fni):
-    #     if i == 0:
-    #         continue
-    #     fni[i] = fn(n * tau)
-    fni: List[float] = [fn(i * tau) if i > 0 else 0 for i in range(2 * M + 1)]
+    fni: List[float] = [0.0] * M
+    for i, n in enumerate(fni):
+        if i == 0:
+            continue
+        fni[i] = fn(n * tau)
 
-    G0: List[float] = [0.0] * M # np.empty(M, dtype=object)
-    Gp: List[float] = [0.0] * M # np.empty(M, dtype=object)
+    G0: List[float] = [0.0] * M
+    Gp: List[float] = [0.0] * M
 
     M1 = M
     for n in range(1, M + 1):
@@ -209,16 +257,16 @@ def _gwr2(fn: Callable[[float], Any], time: float, M: int = 32, precin: int = 0)
             break
 
     best = G0[M1 - 1]
-    Gm: List[float] = [0.0] * M1 # np.full(M1, 0.0, dtype=object)
+    Gm: List[float] = [0.0] * M1
 
+    broken = False
     for k in range(M1 - 1):
         for n in range(M1 - 1 - k)[::-1]:
             try:
                 expr = G0[n + 1] - G0[n]
             except:
+                expr = 0.0
                 broken = True
-
-            if broken or expr == 0.0:
                 break
 
             expr = Gm[n + 1] + (k + 1) / expr
