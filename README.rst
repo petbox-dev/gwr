@@ -3,7 +3,7 @@ function, ``NumericalLaplaceInversion.m``.
 
 https://library.wolfram.com/infocenter/MathSource/4738/
 
-This package provides only one function: ``GWR``. The function calculates the
+This package provides only one function: ``gwr``. The function calculates the
 value of the inverse of a Laplace transform at a specified time value,
 ``Sequence`` of time values, or numpy array of time values.
 
@@ -12,12 +12,12 @@ library for a scalar value of the Laplace parameter.  The ``math`` library and
 ``numpy`` functions do not support multiprecision math and will return invalid
 results if they are used.
 
-The method is described in: Valkó, P.P.and Abate J.: Comparison of Sequence
-Accelerators for the Gaver Method of Numerical Laplace Transform Inversion,
-Computers & Mathematics with Applications, (2002), accepted for publication
-(CAM 5307)
+The method is described in: Valkó, P.P., and Abate J. 2002. Comparison of
+Sequence Accelerators for the Gaver Method of Numerical Laplace Transform
+Inversion. *Computers and Mathematics with Application* **48** (3): 629–636.
+https://doi.org/10.1016/j.camwa.2002.10.017.
 
 More information on multi-precision inversion can be found in: Valkó, P.P.and
-Vajda, S : Inversion of noise-free Laplace transforms: Towards a standardized
-set of test problems, Inverse Problems in Engineering, (2002) vol .10.No.5,
-pp 467-483.
+Vajda, S. 2002. Inversion of Noise-Free Laplace Transforms: Towards a
+Standardized Set of Test Problems. *Inverse Problems in Engineering* **10** (5):
+467-483. https://doi.org/10.1080/10682760290004294.
