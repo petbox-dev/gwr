@@ -29,7 +29,7 @@ Simple Example
     ...     return -mp.log(s) / s - 0.577216 / s
 
     >>> gwr(lap_log_fn, time=5.0, M=32)
-        mpf('1.6094375773356333')
+    mpf('1.6094375773356333')
 
     >>> math.log(5.0)
     1.6094379124341003
