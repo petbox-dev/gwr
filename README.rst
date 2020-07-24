@@ -21,7 +21,7 @@ Simple Example
 .. code-block:: python
 
     >>> import math
-    >>> from petbox.gwr import gwr
+    >>> from gwr_inversion import gwr
     >>> from mpmath import mp
 
     >>> def lap_ln_fn(s: float):

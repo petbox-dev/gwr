@@ -47,7 +47,7 @@ except ImportError:
     from distutils.core import setup
 
 
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 
 
 def get_long_description() -> str:
@@ -63,9 +63,9 @@ if sys.argv[-1] == 'build':
 
 
 setup(
-    name='gwr',
+    name='gwr-inversion',
     version=__version__,
-    description='Numerical Laplace Inversion',
+    description='GWR Algorithm Numerical Laplace Inversion',
     long_description=get_long_description(),
     long_description_content_type="text/x-rst",
     url='https://github.com/petbox-dev/gwr',
@@ -73,6 +73,7 @@ setup(
     author_email='petbox.dev@gmail.com',
     install_requires=['numpy>=1.17', 'mpmath>=1.1.0'],
     zip_safe=False,
+    py_modules=['gwr_inversion'],
     package_data={
         '': ['py.typed']
     },
@@ -93,6 +94,6 @@ setup(
         'Typing :: Typed'
     ],
     keywords=[
-        'laplace', 'inversion', 'transform'
+        'laplace', 'inversion', 'transform', 'gwr'
     ],
 )
