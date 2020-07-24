@@ -15,6 +15,15 @@ library for a scalar value of the Laplace parameter.  The ``math`` library and
 ``numpy`` functions do not support multiprecision math and will return invalid
 results if they are used.
 
+Getting Started
+---------------
+
+Installation if done through ``pip``:
+
+.. code-block:: shell
+
+    >>> pip install gwr_inversion
+
 Simple Example
 --------------
 
