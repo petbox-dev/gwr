@@ -4,10 +4,13 @@ function, ``NumericalLaplaceInversion.m``.
 https://library.wolfram.com/infocenter/MathSource/4738/
 
 This package provides only one function: ``GWR``. The function calculates the
-value of the inverse of a Laplace transform at a specified time point. The
-Laplace transform should be provided as a function ready for multiple-precision
-evaluation. In other words, approximate numbers (with decimal point) are not
-allowed. ``Sympy`` can be used to rationalize a function before passing to GWR.
+value of the inverse of a Laplace transform at a specified time value,
+``Sequence`` of time values, or numpy array of time values.
+
+The Laplace transform should be provided as a function that uses the ``mpmath``
+library for a scalar value of the Laplace parameter.  The ``math`` library and
+``numpy`` functions do not support multiprecision math and will return invalid
+results if they are used.
 
 The method is described in: Valkó, P.P.and Abate J.: Comparison of Sequence
 Accelerators for the Gaver Method of Numerical Laplace Transform Inversion,
