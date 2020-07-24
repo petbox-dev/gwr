@@ -1,3 +1,6 @@
+Gaver-Wynn-Rho Algorithm
+------------------------
+
 This is a Python reproduction of the Mathematica package that provides the GWR
 function, ``NumericalLaplaceInversion.m``.
 
@@ -11,6 +14,28 @@ The Laplace transform should be provided as a function that uses the ``mpmath``
 library for a scalar value of the Laplace parameter.  The ``math`` library and
 ``numpy`` functions do not support multiprecision math and will return invalid
 results if they are used.
+
+Simple Example
+--------------
+
+.. code-block:: python
+
+    >>> import math
+    >>> from petbox.gwr import gwr
+    >>> from mpmath import mp
+
+    >>> def lap_ln_fn(s: float):
+    ...     # log function
+    ...     return -mp.log(s) / s - 0.577216 / s
+
+    >>> gwr(lap_log_fn, time=5.0, M=32)
+        mpf('1.6094375773356333')
+
+    >>> math.log(5.0)
+    1.6094379124341003
+
+
+See the notebooks in ``test\`` for other use examples.
 
 The method is described in: Valkó, P.P., and Abate J. 2002. Comparison of
 Sequence Accelerators for the Gaver Method of Numerical Laplace Transform
