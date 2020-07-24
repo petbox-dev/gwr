@@ -1,21 +1,21 @@
 """
-GWR(F, t, M, precin) gives the inverse of the Laplace transform function named
-'F' for a given time point 't'. The method involves the calculation of 'M' terms
-of the Gaver-functional. The obtained series is accelerated using the Wynn-Rho
-convergence acceleration scheme. The precision of internal calculations is set
-to 'precin'.
+``GWR(fn , time, M, precin)`` gives the inverse of the Laplace transform function
+named ``fn`` for a given array of ``time``. The method involves the calculation
+of ``M`` terms of the Gaver-functional. The obtained series is accelerated using
+the Wynn-Rho convergence acceleration scheme. The precision of internal
+calculations is set to ``precin``.
 
-GWR(F, t, M) does the same, but the precision of the internal calculations is
-selected automatically:  precin = 2.1 M).
+``GWR(F, t, M)`` does the same, but the precision of the internal calculations is
+selected automatically:  ``precin`` = 2.1 M).
 
-GWR(F, t) uses M = 32 terms and precin = 67 as defaults. It should give
+GWR(F, t) uses ``M`` = 32 terms and ``precin`` = 67 as defaults. It should give
 reasonable results for many problems.
 
-Important note: The Laplace transform should be degfined as a function of one
+Important note: The Laplace transform should be defined as a function of one
 argument. It can involve anything from a simple Mathematica expression to a
 sophisticated Module. Since the Laplace transform will be evaluated with
 non-standard (multiple) precision, approximate numbers (with decimal point) or
-Mathematica functions starting with the letter 'N' are not allowed in the
+Mathematica functions starting with the letter ``N`` are not allowed in the
 function definition.
 
 Example usage:
@@ -32,7 +32,7 @@ from functools import lru_cache
 import numpy as np
 from mpmath import mp  # type: ignore
 
-from typing import List, Dict, Tuple, Any, Callable, Union, Iterable
+from typing import List, Dict, Tuple, Any, Callable, Union, Iterable, Optional
 from typing import cast
 
 
@@ -43,14 +43,38 @@ LOG2 = mp.log(2.0)
 
 
 def gwr(fn: Callable[[float], Any], time: Union[float, Iterable[float], np.ndarray],
-        M: int = 32, precin: int = 0) -> Any:
+        M: int = 16, precin: Optional[int] = None) -> Any:
     """
-    Laplace inversion of the given function. Returns a ``mp.mpf`` arbitrary-precision float
-    number, a Sequence of ``mp.mpf``, or an ``np.ndarray`` of ``mp.mpf`` depending upon the
-    type of the ``time`` argument.
+    Gives the inverse of the Laplace transform function ``fn`` for a given array
+    of ``time``. The method involves the calculation of ``M`` terms of the
+    Gaver-functional. The obtained series is accelerated using    the Wynn-Rho
+    convergence acceleration scheme.
+
+    Returns a ``mp.mpf`` arbitrary-precision float number, a Sequence of
+    ``mp.mpf``, or an ``np.ndarray`` of ``mp.mpf`` depending upon the type of
+    the ``time`` argument.
+
+    Parameters
+    ----------
+
+    fn: Callable[[float], Any]
+        The Laplace transformation to invert. Must take the Laplace parameter
+        as the first argument.
+
+    time: Union[float, Iterable[float], np.ndarray]
+        The array of time at which to evalute ``fn``.
+
+    M: int = 32
+        The number of terms
+
+    precin: Optional[int] = None
+        The digits of precision to use. If None (default), automatically set to
+        2.1 * M
+
     """
     dps = mp.dps
-    mp.dps = 21 * M / 10 if precin <= 0 else precin
+    mp.dps = 21 * M / 10 if precin is None else precin
+    # mp.dps = int(2.1 * M) if precin is None else precin
     # mp.dps = max(mp.dps, MACHINE_PRECISION)
 
     if not isinstance(time, Iterable):
@@ -75,44 +99,8 @@ def gwr(fn: Callable[[float], Any], time: Union[float, Iterable[float], np.ndarr
 
     result = np.array([_gwr(fn, t, M, int(mp.dps)) for t in time], dtype=object)
     mp.dps = dps
+    print(dps)
     return result
-
-
-def gwr2(fn: Callable[[float], Any], time: Union[float, Iterable[float], np.ndarray],
-        M: int = 32, precin: int = 0) -> Any:
-    """
-    Laplace inversion of the given function. Returns a ``mp.mpf`` arbitrary-precision float
-    number, a Sequence of ``mp.mpf``, or an ``np.ndarray`` of ``mp.mpf`` depending upon the
-    type of the ``time`` argument.
-    """
-    dps = mp.dps
-    mp.dps = 21 * M / 10 if precin <= 0 else precin
-    # mp.dps = max(mp.dps, MACHINE_PRECISION)
-
-    if not isinstance(time, Iterable):
-        # should be a float, but make it a catch-all for any non-Iterable
-        return _gwr2(fn, time, M, int(mp.dps))
-
-    if not isinstance(time, np.ndarray):
-        # evaluate any Iterable that is not an np.ndarray
-        return [_gwr2(fn, t, M, int(mp.dps)) for t in time]
-
-    assert isinstance(time, np.ndarray), f'Unknown type for time: {type(time)}'
-    if time.ndim < 1:
-        # to iterate over an np.ndarray it must be a vector
-        return np.array([_gwr2(fn, time.item(), M, int(mp.dps))], dtype=object)
-
-    if time.ndim >= 2:
-        # remove single-dimensional entries from any matrix
-        np.squeeze(time)
-        if time.ndim >= 2:
-            # cannot iterate over a matrix
-            raise ValueError(f'Expected ndim < 2, but got {time.ndim}')
-
-    result = np.array([_gwr2(fn, t, M, int(mp.dps)) for t in time], dtype=object)
-    mp.dps = dps
-    return result
-
 
 @lru_cache(maxsize=None)
 def binomial(n: int, i: int, precin: int) -> float:
