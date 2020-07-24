@@ -24,6 +24,7 @@ Installation if done through ``pip``:
 
     >>> pip install gwr_inversion
 
+
 Simple Example
 --------------
 
