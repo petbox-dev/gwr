@@ -35,17 +35,36 @@ class TestInputTypes:
         )])
         np.testing.assert_allclose(result, REF['list_result'], atol=ATOL)
 
-    def test_scalar_returns_mpf(self):
+    def test_scalar_returns_float(self):
         result = gwr(lambda s: -mp.log(s) / s - 0.577216 / s, 5.0, 4)
+        assert isinstance(result, float)
+
+    def test_scalar_returns_mpf(self):
+        result = gwr(lambda s: -mp.log(s) / s - 0.577216 / s, 5.0, 4, dtype="mpf")
         assert isinstance(result, mp.mpf)
 
-    def test_list_returns_list(self):
+    def test_list_returns_list_of_float(self):
         result = gwr(lambda s: -mp.log(s) / s - 0.577216 / s, [1.0, 5.0], 4)
         assert isinstance(result, list)
+        assert all(isinstance(v, float) for v in result)
 
-    def test_ndarray_returns_ndarray(self):
+    def test_list_returns_list_of_mpf(self):
+        result = gwr(lambda s: -mp.log(s) / s - 0.577216 / s, [1.0, 5.0], 4, dtype="mpf")
+        assert isinstance(result, list)
+        assert all(isinstance(v, mp.mpf) for v in result)
+
+    def test_ndarray_returns_float64(self):
         result = gwr(
             lambda s: -mp.log(s) / s - 0.577216 / s,
             np.array([1.0, 5.0]), 4
         )
         assert isinstance(result, np.ndarray)
+        assert result.dtype == np.float64
+
+    def test_ndarray_returns_object_mpf(self):
+        result = gwr(
+            lambda s: -mp.log(s) / s - 0.577216 / s,
+            np.array([1.0, 5.0]), 4, dtype="mpf"
+        )
+        assert isinstance(result, np.ndarray)
+        assert result.dtype == object

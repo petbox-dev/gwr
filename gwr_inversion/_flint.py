@@ -19,10 +19,11 @@ from typing import Any
 from mpmath import mp
 
 try:
-    from flint import arb, ctx as _flint_ctx
+    from flint import arb, fmpz, ctx as _flint_ctx
     HAS_FLINT = True
 except ImportError:
     arb = None
+    fmpz = None
     _flint_ctx = None
     HAS_FLINT = False
 
@@ -35,36 +36,49 @@ def _arb_to_mpf(x: Any) -> Any:
 
 
 def _mpf_to_arb(x: Any) -> Any:
-    """Convert mpmath mpf to arb via string representation."""
-    return arb(mp.nstr(x, int(mp.dps * 1.05) + 5, strip_zeros=False))
+    """Convert mpmath mpf to arb via the _mpf_ tuple (lossless)."""
+    sign, man, exp, bc = x._mpf_
+    a = arb(fmpz(int(man))) * arb(2) ** int(exp)
+    return -a if sign else a
 
 
-def _set_flint_prec() -> None:
-    """Sync flint context precision with current mp.dps."""
-    _flint_ctx.prec = int(mp.dps * 3.3219280948873626) + 10
+def _base_bits() -> int:
+    """Return the base precision in bits from current mp.dps."""
+    return int(mp.dps * 3.3219280948873626) + 10
 
 
 def besselk(n: int, x: Any) -> Any:
     """
     Modified Bessel function of the second kind K_n(x).
 
-    Uses ARB (python-flint) when available (~15x faster than mpmath).
-    Falls back to mp.besselk otherwise.
+    Uses ARB (python-flint) when available with extra working bits to
+    compensate for K_n(x) ~ e^{-x} cancellation. Falls back to mpmath
+    when the required overshoot would more than triple the base precision
+    (crossover where mpmath's asymptotic expansion is faster anyway).
     """
     if not HAS_FLINT:
         return mp.besselk(n, x)
-    _set_flint_prec()
-    return _arb_to_mpf(_mpf_to_arb(x).bessel_k(n))
+    bits = _base_bits()
+    x_abs = float(abs(x))
+    extra_bits = int(x_abs * 1.5) + 64
+    total_bits = bits + extra_bits
+    if total_bits > 3 * bits:
+        return mp.besselk(n, x)
+    _flint_ctx.prec = total_bits
+    x_arb = _mpf_to_arb(x)
+    return _arb_to_mpf(x_arb.bessel_k(n))
 
 
 def besseli(n: int, x: Any) -> Any:
     """
     Modified Bessel function of the first kind I_n(x).
 
-    Uses ARB (python-flint) when available (~15x faster than mpmath).
-    Falls back to mp.besseli otherwise.
+    Uses ARB (python-flint) when available. Falls back to mpmath when
+    flint is not installed.
     """
     if not HAS_FLINT:
         return mp.besseli(n, x)
-    _set_flint_prec()
-    return _arb_to_mpf(_mpf_to_arb(x).bessel_i(n))
+    bits = _base_bits()
+    _flint_ctx.prec = bits
+    x_arb = _mpf_to_arb(x)
+    return _arb_to_mpf(x_arb.bessel_i(n))

@@ -140,6 +140,41 @@ gwr(fn, time, backend="gmpy2")    # require gmpy2 (raises ImportError if absent)
 gwr(fn, time, backend="auto")     # default: use gmpy2 if installed
 ```
 
+### Bessel function implementation
+
+`gwr_inversion.besselk` and `gwr_inversion.besseli` dispatch across three
+backends in priority order:
+
+1. **gmpy2/MPFR** (`_gmpy2_bessel.py`) — custom implementations composed from
+   fundamental MPFR operations since gmpy2 does not provide Bessel functions
+   natively. Uses power series for small x and asymptotic expansion for large x.
+
+2. **python-flint/ARB** (`_flint.py`) — calls `arb.bessel_k` / `arb.bessel_i`
+   from the FLINT library's ball arithmetic.
+
+3. **mpmath** — fallback when neither optional backend is available.
+
+Both `besselk` and `besseli` require careful precision management because
+`K_n(x)` decays as `e^{-x}` while intermediate series terms grow as `e^{+x}`,
+causing catastrophic cancellation at moderate x. The implementations handle this
+in two ways:
+
+- **Extra working bits**: for the series path (small to moderate x), both the
+  gmpy2 and flint backends boost internal precision by `1.5 * |x| + 64` bits
+  to absorb cancellation, then round back to the target precision.
+- **Asymptotic crossover**: for large x (where `x > 1.5 * precision_digits`),
+  both backends switch to the asymptotic expansion
+  `K_n(x) ~ sqrt(pi/2x) * e^{-x} * sum(a_k / x^k)`, which converges without
+  cancellation. The flint backend falls back to mpmath when the required
+  overshoot would more than triple the base precision.
+
+The gmpy2 backend computes `K_1(x)` via the Wronskian identity
+`I_0(x) K_1(x) + I_1(x) K_0(x) = 1/x` rather than a direct series, avoiding a
+second cancellation-prone summation.
+
+`besseli` does not suffer from cancellation (all series terms are positive for
+real x > 0) and needs no precision boost.
+
 ## Parallel Evaluation
 
 For array inputs, time points can be evaluated in parallel:
