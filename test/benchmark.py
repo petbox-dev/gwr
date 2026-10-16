@@ -1,507 +1,290 @@
 """
 Petroleum engineering Laplace transform benchmarks and figures.
 
-Laplace-domain functions extracted from SPE notebooks:
-  - SPE-011463: Infinite-acting radial flow with variable wellbore storage
-  - SPE-011964/018160: Naturally fractured reservoir (dual-porosity)
-  - SPE-013169: Naturally fractured with bounded reservoir
-  - ETX gas well: Fractured well with no-flow outer boundary
+Times the library transforms in ``gwr_inversion.transforms`` under three
+configurations and draws one diagnostic panel per case:
+
+  A  backend="mpmath", Bessel functions from mpmath   (pure-mpmath baseline)
+  B  backend="gmpy2",  Bessel functions from mpmath   (gmpy2 GWR core only)
+  C  backend="gmpy2",  library Bessel dispatch         (default install, [all])
+
+"Bessel functions from mpmath" replaces the transforms' K_n / I_n and the
+fractured-well K_0 / I_0 integrals with their mpmath equivalents.
 
 Usage:
-    PYTHONPATH=. python test/benchmark_petroleum.py
+    PYTHONPATH=. python test/benchmark.py              # M = 8 and 32
+    PYTHONPATH=. python test/benchmark.py --orders 8   # M = 8 only
 """
 
+import argparse
 import time as timer
-from math import exp, log10
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Dict, List, Sequence, Tuple
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.axes import Axes
 from mpmath import mp
 
-from gwr_inversion import gwr, besselk, besseli, HAS_FLINT
+import gwr_inversion.transforms as transforms
+from gwr_inversion import (
+    HAS_FLINT, cache_clear, frac_bounded_nf, gwr, hybrid_rate, lap_transform,
+    linear_bounded_nf, output_derivative, output_rate, radial_bounded_cp, radial_bounded_nf,
+    radial_inf,
+)
 from gwr_inversion._gmpy2 import HAS_GMPY2
 
 
-# ---------------------------------------------------------------------------
-# Laplace-domain functions (module-level for pickling in parallel mode)
-# ---------------------------------------------------------------------------
-
-
-def lap_rad_inf(s: Any) -> Any:
-    """Infinite-acting radial flow.
-
-    SPE-011463. The simplest reservoir model.
-    """
-    sqrt_s = mp.sqrt(s)
-    k0 = besselk(0, sqrt_s)
-    k1 = besselk(1, sqrt_s)
-    return k0 / (sqrt_s * k1) / s
-
-
-def lap_rad_inf_wbs(s: Any, cD: float = 0.0) -> Any:
-    """Infinite-acting radial flow with wellbore storage.
-
-    SPE-011463. The simplest reservoir model.
-    """
-    sqrt_s = mp.sqrt(s)
-    k0 = mp.besselk(0, sqrt_s)
-    k1 = mp.besselk(1, sqrt_s)
-    psd = k0 / (sqrt_s * k1) / s
-    return 1.0 / (1.0 / psd + s ** 2 * cD)
-
-
-
-def lap_rad_inf_wbs_arb(s: Any, cD: float = 0.0) -> Any:
-    """Same as lap_rad_inf_wbs but using ARB Bessel functions."""
-    sqrt_s = mp.sqrt(s)
-    k0 = besselk(0, sqrt_s)
-    k1 = besselk(1, sqrt_s)
-    psd = k0 / (sqrt_s * k1) / s
-    return 1.0 / (1.0 / psd + s ** 2 * cD)
-
-
-
-def lap_rad_inf_vwbs(s: Any, cD: float = 0.0, cDd: float = 1.0, aD: float = 1.0) -> Any:
-    """Infinite-acting radial flow with variable wellbore storage.
-
-    SPE-011463. Models changing wellbore storage coefficient over time
-    (e.g., phase segregation, changing compressibility).
-    """
-    sqrt_s = mp.sqrt(s)
-    k0 = besselk(0, sqrt_s)
-    k1 = besselk(1, sqrt_s)
-    psd = k0 / (sqrt_s * k1) / s
-    wbs = 1 + s ** 2 * cD * cDd * (1 / s - 1 / (s + 1 / aD))
-    return wbs / (1.0 / psd + s ** 2 * cD)
-
-
-
-def lap_rad_inf_natf(s: Any, lam: float = 1e-6, omega: float = 0.1, cD: float = 0.0) -> Any:
-    """Naturally fractured reservoir (dual-porosity), infinite-acting.
-
-    SPE-011964, SPE-018160. Warren & Root (1963) model.
-    lam = interporosity flow coefficient (matrix-fracture coupling)
-    omega = storativity ratio (fracture storage / total storage)
-    """
-    fs = (lam + (omega * (1.0 - omega) * s)) / (lam + ((1.0 - omega) * s))
-    sqrt_fs = mp.sqrt(fs * s)
-    k0 = besselk(0, sqrt_fs)
-    k1 = besselk(1, sqrt_fs)
-    psd = k0 / (sqrt_fs * k1) / s
-    return 1.0 / (1.0 / psd + s ** 2 * cD)
-
-
-
-def lap_rad_bounded_qD(s: Any, reD: float = 1000.0, cD: float = 0.0) -> Any:
-    """
-    Bounded radial flow (no-flow outer boundary).
-    """
-    sqrt_s = mp.sqrt(s)
-
-    k0 = besselk(0, sqrt_s)
-    i0 = besseli(0, sqrt_s)
-    i1_reD = besseli(1, sqrt_s * reD)
-    k1_reD = besselk(1, sqrt_s * reD)
-    k1 = besselk(1, sqrt_s)
-    i1 = besseli(1, sqrt_s)
-
-    psd = (
-        (k0 * i1_reD + i0 * k1_reD)
-        / (sqrt_s * k1 * i1_reD - sqrt_s * i1 * k1_reD)
-    ) / s
-    # pwd = 1.0 / (1.0 / psd + s ** 2 * cD)
-    qd = 1.0 / (s ** 2 * psd)
-    return qd
-
-
-
-def lap_rad_constant_press(s: Any, reD: float = 1000.0, cD: float = 0.0) -> Any:
-    """
-    Radial flow, constant-pressure outer boundary.
-    """
-    sqrt_s = mp.sqrt(s)
-
-    k0 = besselk(0, sqrt_s)
-    i0 = besseli(0, sqrt_s)
-    k0_reD = besselk(0, sqrt_s * reD)
-    i0_reD = besseli(0, sqrt_s * reD)
-    k1 = besselk(1, sqrt_s)
-    i1 = besseli(1, sqrt_s)
-
-    psd = (
-        (k0 * i0_reD - i0 * k0_reD)
-        / (sqrt_s * k1 * i0_reD + sqrt_s * i1 * k0_reD)
-    ) / s
-    # pwd = 1.0 / (1.0 / psd + s ** 2 * cD)
-    # qd = 1.0 / (s ** 2 * psd)
-    return psd
-
-
-
-def lap_rad_nat_frac_bounded(s: Any, lam: float = 1e-6, omega: float = 0.1, reD: float = 1000.0, cD: float = 0.0) -> Any:
-    """
-    Radial flow, naturally fractured, constant-pressure outer boundary.
-    """
-    fs = (lam + (omega * (1.0 - omega) * s)) / (lam + ((1.0 - omega) * s))
-    sqrt_fs = mp.sqrt(fs * s)
-
-    k0 = besselk(0, sqrt_fs)
-    i0 = besseli(0, sqrt_fs)
-    i1_reD = besseli(1, sqrt_fs * reD)
-    k1_reD = besselk(1, sqrt_fs * reD)
-    k1 = besselk(1, sqrt_fs)
-    i1 = besseli(1, sqrt_fs)
-
-    psd = (
-        (k0 * i1_reD + i0 * k1_reD)
-        / (sqrt_fs * k1 * i1_reD - sqrt_fs * i1 * k1_reD)
-    ) / s
-    pwd = 1.0 / (1.0 / psd + s ** 2 * cD)
-    return psd
-
-
-
-def lap_linear_nf(s: Any, xD: float = 0.0) -> Any:
-    """Linear flow with no-flow outer boundary.
-
-    pwd = 1/(s * sqrt(s)) * cosh(sqrt(s)*(1-xD)) / sinh(sqrt(s))
-    xD = dimensionless distance from wellbore (0 = at well, 1 = at boundary)
-    """
-    sqrt_s = mp.sqrt(s)
-    return mp.cosh(sqrt_s * (1 - xD)) / (s * sqrt_s * mp.sinh(sqrt_s))
-
-
-def _lap_frac_rad_inf(sqrt_s: Any, xD: float) -> Any:
-    """Infinite-acting component of fractured well solution."""
-    k0_int_1 = mp.quad(lambda x: besselk(0, x), [0.0, sqrt_s * (1 - xD)])
-    k0_int_2 = mp.quad(lambda x: besselk(0, x), [0.0, sqrt_s * (1 + xD)])
-    return k0_int_1 + k0_int_2
-
-
-
-def _lap_frac_rad_nf(sqrt_s: Any, xD: float) -> Any:
-    """No-flow boundary component of fractured well solution."""
-    i0_int_1 = mp.besseli(0, sqrt_s * (1 - xD), -1)
-    i0_int_2 = mp.besseli(0, sqrt_s * (1 + xD), -1)
-    return i0_int_1 + i0_int_2
-
-
-
-def lap_frac_rad(s: Any, reD: float = 100.0, xD: float = 0.732) -> Any:
-    """Fractured well with no-flow outer boundary.
-
-    ETX gas well RTA. Vertically fractured well model.
-    reD = dimensionless external radius
-    xD = dimensionless fracture half-length position (default 0.732 for uniform flux)
-
-    Uses mp.quad (numerical quadrature) inside the Laplace function,
-    making this the most computationally expensive transform.
-    """
-    sqrt_s = mp.sqrt(s)
-    c_ = 1 / (2 * s * sqrt_s)
-
-    inf = c_ * _lap_frac_rad_inf(sqrt_s, xD)
-
-    k1 = besselk(1, sqrt_s * reD)
-    i1 = besseli(1, sqrt_s * reD)
-    nf = c_ * k1 / i1 * _lap_frac_rad_nf(sqrt_s, xD)
-
-    return inf + nf
+LaplaceFunction = Callable[[Any], Any]
 
 
 # ---------------------------------------------------------------------------
-# Benchmark helpers
+# Bessel configurations
 # ---------------------------------------------------------------------------
 
-def bench_row(method: str, elapsed: float, n_points: int) -> None:
-    print(f"  {method:<45} {elapsed:>8.3f}s  ({elapsed/n_points*1000:>6.1f} ms/pt)")
+
+def _mpmath_besselk0_integral(z: Any) -> Any:
+    """int_0^z K_0 via the modified Struve closed form, all in mpmath."""
+    return mp.pi * z / 2 * (mp.besselk(0, z) * mp.struvel(-1, z)
+                            + mp.besselk(1, z) * mp.struvel(0, z))
 
 
-def run_benchmark(name: str, fn: Callable[..., Any], time_array: "np.ndarray[Any, Any]", M: int = 8) -> "np.ndarray[Any, Any]":
-    """Benchmark a single Laplace function across backends."""
-    n = len(time_array)
-    print(f"\n{name} ({n} points, M={M}):")
-    print(f"  {'Method':<45} {'Total':>8}   {'Per point':>10}")
-    print(f"  {'-'*68}")
+LIBRARY_BESSEL = (transforms._besselk, transforms._besseli,
+                  transforms._besselk0_integral, transforms._besseli0_integral)
+MPMATH_BESSEL = (mp.besselk, mp.besseli, _mpmath_besselk0_integral,
+                 lambda z: mp.besseli(0, z, -1))
 
-    # mpmath
-    t0 = timer.perf_counter()
-    ref = np.array([float(v) for v in gwr(fn, time_array, M, backend="mpmath")])
-    bench_row("mpmath backend", timer.perf_counter() - t0, n)
 
-    if HAS_GMPY2:
-        t0 = timer.perf_counter()
-        r = np.array([float(v) for v in gwr(fn, time_array, M, backend="gmpy2")])
-        bench_row("gmpy2 backend", timer.perf_counter() - t0, n)
+def _use_bessel(functions: Tuple[Any, ...]) -> None:
+    (transforms._besselk, transforms._besseli,
+     transforms._besselk0_integral, transforms._besseli0_integral) = functions
 
-    return ref
+
+CONFIGURATIONS: List[Tuple[str, str, Tuple[Any, ...]]] = [
+    ("A mpmath core + mpmath Bessel", "mpmath", MPMATH_BESSEL),
+    ("B gmpy2 core + mpmath Bessel", "gmpy2", MPMATH_BESSEL),
+    ("C gmpy2 core + library Bessel", "gmpy2", LIBRARY_BESSEL),
+]
 
 
 # ---------------------------------------------------------------------------
-# Plotting
+# Cases
 # ---------------------------------------------------------------------------
 
-def plot_pressure_derivative(
-    ax: Axes, time: "np.ndarray[Any, Any]",
-    title: str,
-    series: list["np.ndarray[Any, Any]"],
-    labels: list[str] = ["p_D", "p_Dd"],
-    xlims: tuple[float | None, float | None] = (None, None),
-    ylims: tuple[float | None, float | None] = (None, None),
+LAMBDA, OMEGA = 1e-6, 0.1
+RADIAL_TIME = 10 ** np.linspace(1, 7, 31)
+FRAC_TIME = 10 ** np.linspace(-2, 2, 21)
+
+TIMING_CASES: List[Tuple[str, LaplaceFunction, "np.ndarray[Any, Any]"]] = [
+    ("Radial inf + WBS (cD=1e3), pressure",
+     lambda s: lap_transform(s, radial_inf, cD=1e3), RADIAL_TIME),
+    ("Radial inf + variable WBS (1e3, 10, 0.01), pressure",
+     lambda s: lap_transform(s, radial_inf, cD=1e3, cDd=10.0, aD=0.01), RADIAL_TIME),
+    ("Radial inf + dual porosity + WBS (cD=100), pressure",
+     lambda s: lap_transform(s, radial_inf, lam=LAMBDA, omega=OMEGA, cD=100.0), RADIAL_TIME),
+    ("Radial no-flow (reD=1000), rate",
+     lambda s: output_rate(lap_transform(s, radial_bounded_nf, reD=1000.0), s), RADIAL_TIME),
+    ("Radial const-P (reD=1000), pressure",
+     lambda s: lap_transform(s, radial_bounded_cp, reD=1000.0), RADIAL_TIME),
+    ("Radial no-flow (reD=1000) + dual porosity, pressure",
+     lambda s: lap_transform(s, radial_bounded_nf, reD=1000.0, lam=LAMBDA, omega=OMEGA),
+     RADIAL_TIME),
+    ("Linear no-flow, pressure (no Bessel)",
+     lambda s: lap_transform(s, linear_bounded_nf, xD=0.0), RADIAL_TIME),
+    ("Fractured well no-flow (reD=100), pressure",
+     lambda s: lap_transform(s, frac_bounded_nf, reD=100.0), FRAC_TIME),
+]
+
+
+def run_timings(orders: Sequence[int]) -> None:
+    """Time every case under every configuration; report max rel diff vs A."""
+    for M in orders:
+        print(f"\nM = {M}")
+        print(f"  {'Case':<54} {'A (s)':>8} {'B (s)':>8} {'C (s)':>8} {'A/C':>6} "
+              f"{'C ms/pt':>8} {'max rel C-A':>12}")
+        print(f"  {'-' * 110}")
+        for label, laplace_function, time_array in TIMING_CASES:
+            results: Dict[str, "np.ndarray[Any, Any]"] = {}
+            seconds: Dict[str, float] = {}
+            for name, backend, functions in CONFIGURATIONS:
+                if backend == "gmpy2" and not HAS_GMPY2:
+                    continue
+                _use_bessel(functions)
+                cache_clear()
+                start = timer.perf_counter()
+                results[name[0]] = np.asarray(gwr(laplace_function, time_array, M,
+                                                  backend=backend))
+                seconds[name[0]] = timer.perf_counter() - start
+            _use_bessel(LIBRARY_BESSEL)
+            if "C" not in seconds:
+                print(f"  {label:<54} {seconds['A']:8.2f}  (gmpy2 not installed)")
+                continue
+            relative = np.max(np.abs((results["C"] - results["A"]) / results["A"]))
+            print(f"  {label:<54} {seconds['A']:8.2f} {seconds['B']:8.2f} {seconds['C']:8.2f} "
+                  f"{seconds['A'] / seconds['C']:6.1f} "
+                  f"{seconds['C'] / len(time_array) * 1e3:8.1f} {relative:12.2e}", flush=True)
+
+
+# ---------------------------------------------------------------------------
+# Figures
+# ---------------------------------------------------------------------------
+
+
+def _square_decade_limits(
+    axis: Axes,
+    x_limits: Tuple[float, float],
+    series: Sequence["np.ndarray[Any, Any]"],
+    x_values: "np.ndarray[Any, Any]",
 ) -> None:
-    """Standard log-log pressure/derivative diagnostic plot."""
-    ax.loglog(time, series[0], 'o-', ms=3, lw=0.8, label=labels[0])
-    ax.loglog(time, np.abs(series[1]), 's-', ms=3, lw=0.8, label=labels[1])
-    if len(series) > 2:
-        ax.loglog(time, np.abs(series[2]), 'd-', ms=3, lw=0.8, label=labels[2])
-    if len(series) > 3:
-        ax.loglog(time, np.abs(series[3]), 'x-', ms=3, lw=0.8, label=labels[3])
-    if len(series) > 4:
-        ax.loglog(time, np.abs(series[4]), 'v-', ms=3, lw=0.8, label=labels[4])
+    """Fix x to ``x_limits`` and y to the same number of decades, ending one
+    half-decade above the largest plotted value inside ``x_limits``."""
+    inside = (x_values >= x_limits[0]) & (x_values <= x_limits[1])
+    largest = max(float(np.nanmax(np.abs(values[inside]))) for values in series)
+    y_high = 10 ** (np.ceil(np.log10(largest) * 2) / 2 + 0.5)
+    decades = np.log10(x_limits[1]) - np.log10(x_limits[0])
+    axis.set_xlim(*x_limits)
+    axis.set_ylim(y_high / 10 ** decades, y_high)
+    axis.set_aspect("equal", adjustable="box")
 
-    ax.set_xlabel("Dimensionless time, $t_D / C_D$")
-    ax.set_ylabel("Dimensionless pressure / derivative")
-    ax.set_title(title)
-    ax.set_xlim(xlims)
-    ax.set_ylim(ylims)
-    ax.legend(fontsize=8)
-    ax.set_aspect(1, 'datalim')
-    ax.grid(True, which='major', ls=':', alpha=0.75)
+
+def _plot_panel(
+    axis: Axes,
+    title: str,
+    x_values: "np.ndarray[Any, Any]",
+    x_label: str,
+    series: Sequence["np.ndarray[Any, Any]"],
+    labels: Sequence[str],
+    x_limits: Tuple[float, float],
+) -> None:
+    markers = ["o-", "s-", "d-", "^-", "v-"]
+    for values, label, marker in zip(series, labels, markers):
+        axis.loglog(x_values, np.abs(values), marker, ms=2, lw=0.8, label=label)
+    axis.set_title(title, fontsize=10)
+    axis.set_xlabel(x_label, fontsize=9)
+    axis.set_ylabel("Dimensionless pressure / rate", fontsize=9)
+    axis.legend(fontsize=8)
+    axis.grid(True, which="major", ls=":", alpha=0.6)
+    _square_decade_limits(axis, x_limits, series, x_values)
+
+
+def _pressure_and_derivative(
+    geometry: Callable[..., Any],
+    time_array: "np.ndarray[Any, Any]",
+    M: int,
+    **kwargs: Any,
+) -> Tuple["np.ndarray[Any, Any]", "np.ndarray[Any, Any]"]:
+    pressure = gwr(lambda s: lap_transform(s, geometry, **kwargs), time_array, M)
+    derivative = time_array * gwr(
+        lambda s: output_derivative(lap_transform(s, geometry, **kwargs), s), time_array, M)
+    return pressure, derivative
 
 
 def generate_figures(outdir: str) -> None:
-    """Generate diagnostic plots for all petroleum Laplace transforms."""
+    """Draw one log-log diagnostic panel per benchmark case."""
     outpath = Path(outdir)
     outpath.mkdir(parents=True, exist_ok=True)
-
-    mp.dps = 50
     M = 8
+    pressure_labels = [r"$p_D$", r"$t_D \, p_D'$"]
+    figure, axes = plt.subplots(3, 3, figsize=(18, 18))
 
-    fig, axes = plt.subplots(3, 3, figsize=(18, 18))
+    # 1. Infinite-acting radial flow
+    time_array = 10 ** np.linspace(-3, 5, 81)
+    _plot_panel(axes[0, 0], "Infinite-acting Radial Flow", time_array, r"$t_D$",
+                _pressure_and_derivative(radial_inf, time_array, M), pressure_labels,
+                (1e-3, 1e5))
 
-    # 1. Infinite-acting radial flow (cD = 1e3)
-    time = 10 ** np.linspace(-5, 5, 61)
+    # 2. Infinite-acting radial flow + WBS
+    wellbore_storage = 1e13
+    time_array = 10 ** np.linspace(8, 18, 101)
+    _plot_panel(axes[0, 1], r"Radial Flow + WBS ($C_D = 10^{13}$)",
+                time_array / wellbore_storage, r"$t_D / C_D$",
+                _pressure_and_derivative(radial_inf, time_array, M, cD=wellbore_storage),
+                pressure_labels, (1e-5, 1e5))
 
-    pD = np.array([float(v) for v in gwr(
-        lambda s: lap_rad_inf(s), time, M)])
-    dpD = time * np.array([float(v) for v in gwr(
-        lambda s: s * lap_rad_inf(s), time, M)])
+    # 3. Fractured well, no-flow boundary
+    time_array = 10 ** np.linspace(-3, 5, 81)
+    _plot_panel(axes[0, 2], r"Fractured Well, No-Flow ($r_{eD} = 100$)", time_array,
+                r"$t_{Dxf}$",
+                _pressure_and_derivative(frac_bounded_nf, time_array, M, reD=100.0),
+                pressure_labels, (1e-3, 1e5))
 
-    plot_pressure_derivative(
-        axes[0, 0], time,
-        "Infinite-acting Radial Flow",
-        [pD, dpD]
-    )
+    # 4. Variable wellbore storage
+    wellbore_storage = 1e7
+    time_array = 10 ** np.linspace(2, 12, 101)
+    _plot_panel(axes[1, 0], "Radial Flow, Variable WBS", time_array / wellbore_storage,
+                r"$t_D / C_D$",
+                _pressure_and_derivative(radial_inf, time_array, M, cD=wellbore_storage,
+                                         cDd=1.0, aD=-0.575),
+                pressure_labels, (1e-5, 1e5))
 
-    # 2. Infinite-acting radial flow w/ wellbore storage (cD = 1e3)
-    cD = 1e13
-    _cD = round(log10(cD), 0)
-    time = 10 ** np.linspace(_cD - 5, _cD + 5, 61)
+    # 5. Naturally fractured, infinite-acting, WBS
+    wellbore_storage = 100.0
+    time_array = 10 ** np.linspace(-1, 7, 81)
+    _plot_panel(axes[1, 1], r"Radial Flow, Dual Porosity ($\lambda=10^{-6}, \omega=0.1$)",
+                time_array / wellbore_storage, r"$t_D / C_D$",
+                _pressure_and_derivative(radial_inf, time_array, M, lam=LAMBDA, omega=OMEGA,
+                                         cD=wellbore_storage),
+                pressure_labels, (1e-3, 1e5))
 
-    pD = np.array([float(v) for v in gwr(
-        lambda s: lap_rad_inf_wbs(s, cD=cD), time, M)])
-    dpD = time * np.array([float(v) for v in gwr(
-        lambda s: s * lap_rad_inf_wbs(s, cD=cD), time, M)])
+    # 6. Hybrid rate analysis, bounded radial flow
+    outer_radius = 24.0
+    time_array = 10 ** np.linspace(-1, 6, 141)
+    rate = gwr(lambda s: output_rate(lap_transform(s, radial_bounded_nf, reD=outer_radius), s),
+               time_array, M)
+    hybrid_series = hybrid_rate(rate, time_array, b=0.5)
+    display = time_array >= 1e1
+    _plot_panel(axes[1, 2], r"Hybrid Rate, No-Flow ($r_{eD} = 24$)", time_array[display],
+                r"$t_D$", [values[display] for values in hybrid_series],
+                [r"$q_D$", r"$q_{Dd}$", r"$q_{Ddr}$", r"$q_{Ddi}$", r"$q_{Ddid}$"],
+                (1e1, 1e5))
 
-    plot_pressure_derivative(
-        axes[0, 1], time / cD,
-        "Infinite-acting Radial Flow + WBS (mpmath)",
-        [pD, dpD]
-    )
+    # 7. Constant-pressure boundary
+    time_array = 10 ** np.linspace(-3, 3, 61)
+    _plot_panel(axes[2, 0], r"Radial Flow, Const-P ($r_{eD} = 24$)", time_array, r"$t_D$",
+                _pressure_and_derivative(radial_bounded_cp, time_array, 16,
+                                         reD=outer_radius),
+                pressure_labels, (1e-3, 1e3))
 
-    # 3. Infinite-acting radial flow w/ wellbore storage (arb) (cD = 1e3)
-    cD = 1e13
-    _cD = round(log10(cD), 0)
-    time = 10 ** np.linspace(_cD - 5, _cD + 5, 61)
+    # 8. Naturally fractured, no-flow boundary
+    _plot_panel(axes[2, 1], r"Dual Porosity, No-Flow ($r_{eD} = 24$)", time_array, r"$t_D$",
+                _pressure_and_derivative(radial_bounded_nf, time_array, M, reD=outer_radius,
+                                         lam=LAMBDA, omega=OMEGA),
+                pressure_labels, (1e-3, 1e3))
 
-    pD = np.array([float(v) for v in gwr(
-        lambda s: lap_rad_inf_wbs_arb(s, cD=cD), time, M)])
-    dpD = time * np.array([float(v) for v in gwr(
-        lambda s: s * lap_rad_inf_wbs_arb(s, cD=cD), time, M)])
+    # 9. Linear flow, no-flow boundary (no Bessel functions)
+    time_array = 10 ** np.linspace(-3, 3, 61)
+    _plot_panel(axes[2, 2], "Linear Flow, No-Flow", time_array, r"$t_D$",
+                _pressure_and_derivative(linear_bounded_nf, time_array, M, xD=0.0),
+                pressure_labels, (1e-3, 1e3))
 
-    plot_pressure_derivative(
-        axes[0, 2], time / cD,
-        "Infinite-acting Radial Flow + WBS (ARB)",
-        [pD, dpD]
-    )
-
-    # 4. Infinite-acting radial flow w/ Variable wellbore storage
-    cD, cDd, aD = 1e7, 1.0, -.575
-    _cD = round(log10(cD), 0)
-    time = 10 ** np.linspace(_cD - 5, _cD + 5, 61)
-
-    pD = np.array([float(v) for v in gwr(
-        lambda s: lap_rad_inf_vwbs(s, cD=cD, cDd=cDd, aD=aD), time, M)])
-    dpD = time * np.array([float(v) for v in gwr(
-        lambda s: s * lap_rad_inf_vwbs(s, cD=cD, cDd=cDd, aD=aD), time, M)])
-
-    plot_pressure_derivative(
-        axes[1, 0], time / cD,
-        "Infinite-acting Radial Flow w/ Variable WBS\n",
-        [pD, dpD]
-    )
-
-    # 5. Naturally fractured, infinite-acting
-    lam, omega, cD = 1e-6, 0.1, 100.0
-    time = 10 ** np.linspace(-1, 7, 61)
-
-    pD = np.array([float(v) for v in gwr(
-        lambda s: lap_rad_inf_natf(s, lam=lam, omega=omega, cD=cD), time, M)])
-    dpD = time * np.array([float(v) for v in gwr(
-        lambda s: s * lap_rad_inf_natf(s, lam=lam, omega=omega, cD=cD), time, M)])
-
-    plot_pressure_derivative(
-        axes[1, 1], time / cD,
-        "Infinite-acting Radial Flow, Naturally Fractured\n",
-        [pD, dpD]
-    )
-
-    # 6. Bounded radial flow (homogeneous, no-flow)
-    from scipy.integrate import simpson
-    M = 8
-    skin = -4.75
-    rw = 0.354
-    reD = 1000.0 / (rw * exp(-skin))
-    cD = .0001 * exp(2 * -skin)
-    reD = round(reD, 0)
-    cD = exp(round(log10(cD), 0))
-    arps_b = 0.5
-
-    time = 10 ** np.linspace(-2, 6, 101)
-
-    qD = np.array([float(v) for v in gwr(
-        lambda s: lap_rad_bounded_qD(s, reD=reD, cD=cD), time, M)])
-    qD_hyp = 1 / (1 + time * arps_b) ** (1 / arps_b) - np.exp(-time)
-    qD_hybrid = qD + qD_hyp
-
-    qDd = time * np.abs(np.gradient(qD_hybrid, time))
-
-    qDdr = 1 / (time * np.gradient(1 / qD_hybrid, time))
-
-    qDdi = np.array([simpson(qD_hybrid[:i + 1], time[:i + 1]) for i in range(len(time))]) / time
-    B = mp.log(qD_hybrid[1] / qD_hybrid[0]) / mp.log(time[1] / time[0])
-    A = qD_hybrid[0] / time[0] ** B
-    qDdi[0] = A / (B + 1) * time[0] ** (B + 1)
-
-    qDdid = qDdi - qD_hybrid
-
-    plot_pressure_derivative(
-        axes[1, 2], time,
-        "Radial flow Hybrid Model (No-Flow Boundary)\n",
-        [qD, qDd, qDdr, qDdi, qDdid],
-        labels=["q_D", "q_Dd", "q_Ddr", "q_Ddi", "q_Ddid"],
-        xlims=(1e1, 1e5),
-        ylims=(1e-3, 1e1)
-    )
-
-    # 7. Radial Flow, constant-pressure boundary
-    M = 16
-    cD - 1e13
-
-    time = 10 ** np.linspace(-3, 3, 101)
-
-    pD = np.array([float(v) for v in gwr(
-        lambda s: lap_rad_constant_press(s, reD=reD, cD=cD), time, M)])
-    pDd = time * np.array([float(v) for v in gwr(
-        lambda s: s * lap_rad_constant_press(s, reD=reD, cD=cD), time, M)])
-
-    plot_pressure_derivative(
-        axes[2, 0], time / cD,
-        "Radial flow (Const-P Boundary)\n",
-        [pD, pDd]
-    )
-
-    # 8. Radial Flow, naturally fractured, constant-pressure boundary
-    M = 8
-    lam, omega = 1e-6, 0.1
-    pD = np.array([float(v) for v in gwr(
-        lambda s: lap_rad_nat_frac_bounded(s, lam=lam, omega=omega, reD=reD, cD=cD),
-        time, M)])
-    dpD = time * np.array([float(v) for v in gwr(
-        lambda s: s * lap_rad_nat_frac_bounded(s, lam=lam, omega=omega, reD=reD, cD=cD),
-        time, M)])
-
-    plot_pressure_derivative(
-        axes[2, 1], time / cD,
-        "Radial flow, naturally fractured (No-Flow Boundary)\n",
-        [np.abs(pD), dpD], labels=["q_D", "dq_D"]
-    )
-
-    axes[2, 2].set_visible(False)
-
-    plt.tight_layout()
-    fig.savefig(outpath / "benchmarks.png", dpi=150)
+    figure.tight_layout()
+    figure.savefig(outpath / "benchmarks.png", dpi=150)
     print(f"\nSaved figure to {outpath / 'benchmarks.png'}")
-    plt.close(fig)
+    plt.close(figure)
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
-    mp.dps = 50
+    parser = argparse.ArgumentParser(description="Benchmark the library Laplace transforms.")
+    parser.add_argument("--orders", type=int, nargs="+", default=[8, 32],
+                        help="GWR M values to time (default: 8 32)")
+    parser.add_argument("--skip-figures", action="store_true", help="Timings only")
+    arguments = parser.parse_args()
 
     print("=" * 72)
-    print("  Laplace Transform Benchmarks")
+    print("  Laplace Transform Benchmarks (gwr_inversion.transforms)")
     print("=" * 72)
     print(f"\n  gmpy2: {'installed' if HAS_GMPY2 else 'not installed'}")
     print(f"  flint: {'installed' if HAS_FLINT else 'not installed'}")
+    run_timings(arguments.orders)
 
-    # 1. Infinite-acting radial flow (simple — besselk only)
-    cD = 1e3
-    time = 10 ** np.linspace(1, 7, 31)
-    run_benchmark(
-        "Infinite-acting Radial Flow + WBS (ARB)",
-        lambda s: lap_rad_inf_wbs_arb(s, cD=cD), time, M=8)
-
-    # 2. Variable wellbore storage
-    cD, cDd, aD = 1e3, 10.0, 0.01
-    run_benchmark(
-        "Infinite-acting Radial Flow w/ Variable WBS",
-        lambda s: lap_rad_inf_vwbs(s, cD=cD, cDd=cDd, aD=aD), time, M=8)
-
-    # 3. Naturally fractured, infinite-acting
-    lam, omega, cD = 1e-6, 0.1, 100.0
-    run_benchmark(
-        "Infinite-acting Radial Flow, Naturally Fractured",
-        lambda s: lap_rad_inf_natf(s, lam=lam, omega=omega, cD=cD), time, M=8)
-
-    # 4. Radial flow, no-flow boundary (homogeneous)
-    reD, cD = 1000.0, 100.0
-    run_benchmark(
-        "Radial flow, no-flow boundary (reD=1000)",
-        lambda s: lap_rad_bounded_qD(s, reD=reD, cD=cD), time, M=8)
-
-    # 5. Radial flow, constant-pressure boundary
-    run_benchmark(
-        "Radial flow, const-P boundary (reD=1000)",
-        lambda s: lap_rad_constant_press(s, reD=reD, cD=cD),
-        time, M=8)
-
-    # 6. Radial flow, naturally fractured, no-flow boundary
-    run_benchmark(
-        "Radial flow, naturally fractured, no-flow boundary\n"
-        r"$\lambda = 10^{-6}, \omega = 0.1, r_{eD} = 1000$",
-        lambda s: lap_rad_nat_frac_bounded(s, lam=lam, omega=omega, reD=reD, cD=cD),
-        time, M=8)
-
-    # 7. Fractured well (expensive — uses quadrature)
-    reD = 100.0
-    time = 10 ** np.linspace(-2, 2, 21)
-    run_benchmark(
-        "Fractured well, no-flow boundary (reD=100)",
-        lambda s: lap_frac_rad(s, reD=reD), time, M=8)
-
-    # Generate figures
-    print("\n" + "=" * 72)
-    print("  Generating figures...")
-    print("=" * 72)
-    generate_figures("test")
+    if not arguments.skip_figures:
+        generate_figures("test")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
