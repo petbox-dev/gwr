@@ -22,7 +22,8 @@ Usage in a Laplace transform function::
         return 1.0 / (s / b + s**2 * 1e3)
 """
 
-from typing import Any, Callable, Optional
+from functools import lru_cache
+from typing import Any, Callable, Optional, Tuple
 
 from mpmath import mp
 
@@ -42,6 +43,9 @@ _INITIAL_GUARD_BITS = 16
 # Bits added on each retry beyond the measured deficit.
 _RETRY_GUARD_BITS = 32
 _MAX_ATTEMPTS = 8
+# Distinct (argument, precision) pairs kept by the order-0/1 cache. A Laplace
+# transform evaluates a handful of Bessel arguments per s.
+_ORDER_01_CACHE_SIZE = 32
 
 
 def _arb_to_mpf(x: Any) -> Any:
@@ -63,6 +67,9 @@ def _adaptive(evaluate: Callable[[Any], Any], x: Any) -> Optional[Any]:
     Evaluate ``evaluate(x_arb)`` and raise the ARB working precision until
     the result's relative accuracy is at least ``mp.prec + 10`` bits.
 
+    ``evaluate`` returns one arb or a tuple of arbs; for a tuple, the least
+    accurate element sets the retry, and a tuple of mpf is returned.
+
     Returns None when the input is not a positive real number or the loop
     does not converge; the caller then falls back to mpmath.
     """
@@ -83,9 +90,14 @@ def _adaptive(evaluate: Callable[[Any], Any], x: Any) -> Optional[Any]:
         for _ in range(_MAX_ATTEMPTS):
             _flint_ctx.prec = working_bits
             value = evaluate(x_arb)
-            accuracy_bits = value.rel_accuracy_bits()
-            if accuracy_bits >= target_bits:
-                return _arb_to_mpf(value)
+            if isinstance(value, tuple):
+                accuracy_bits = min(element.rel_accuracy_bits() for element in value)
+                if accuracy_bits >= target_bits:
+                    return tuple(_arb_to_mpf(element) for element in value)
+            else:
+                accuracy_bits = value.rel_accuracy_bits()
+                if accuracy_bits >= target_bits:
+                    return _arb_to_mpf(value)
             working_bits += max(target_bits - accuracy_bits, 0) + _RETRY_GUARD_BITS
         return None
     finally:
@@ -114,16 +126,57 @@ def _besselk_integer(order: int) -> Callable[[Any], Any]:
     return evaluate
 
 
+def _bessel_order_01_arb(x_arb: Any) -> Tuple[Any, Any, Any, Any]:
+    """(K_0, K_1, I_0, I_1) at one argument; K_1 from the Wronskian."""
+    k0 = x_arb.bessel_k(0)
+    i0 = x_arb.bessel_i(0)
+    i1 = x_arb.bessel_i(1)
+    k1 = (1 / x_arb - i1 * k0) / i0
+    return k0, k1, i0, i1
+
+
+@lru_cache(maxsize=_ORDER_01_CACHE_SIZE)
+def _bessel_order_01_cached(x_key: Tuple[Any, ...], precision_bits: int) -> Optional[Any]:
+    """
+    (K_0, K_1, I_0, I_1) for the mpf whose ``_mpf_`` tuple is ``x_key``.
+
+    A transform typically needs several of these four at the same argument
+    (``radial_bounded_nf`` asks for K_0, K_1, I_0, I_1 at sqrt(s), and K_1
+    with I_1 at sqrt(s) r_eD); K_1 alone already needs the other three. One
+    ARB evaluation serves all of them. ``precision_bits`` is ``mp.prec`` at
+    the call, so a change of precision never returns a stale entry.
+    """
+    x_mpf = mp.mpf.__new__(mp.mpf)
+    x_mpf._mpf_ = x_key
+    return _adaptive(_bessel_order_01_arb, x_mpf)
+
+
+def _bessel_order_01(x: Any) -> Optional[Any]:
+    """Cached (K_0, K_1, I_0, I_1) at x, or None for non-positive or non-real x."""
+    try:
+        x_mpf = mp.mpf(x)
+    except TypeError:
+        return None
+    if not x_mpf > 0:
+        return None
+    return _bessel_order_01_cached(x_mpf._mpf_, mp.prec)
+
+
 def besselk(n: int, x: Any) -> Any:
     """
     Modified Bessel function of the second kind K_n(x).
 
     Uses ARB (python-flint) with adaptive working precision for integer
-    ``n`` and real ``x > 0``. Falls back to mpmath otherwise.
+    ``n`` and real ``x > 0``. Orders 0 and 1 share one cached evaluation of
+    (K_0, K_1, I_0, I_1) per argument. Falls back to mpmath otherwise.
     """
     if not HAS_FLINT or int(n) != n:
         return mp.besselk(n, x)
-    result = _adaptive(_besselk_integer(abs(int(n))), x)
+    order = abs(int(n))
+    if order <= 1:
+        values = _bessel_order_01(x)
+        return mp.besselk(n, x) if values is None else values[order]
+    result = _adaptive(_besselk_integer(order), x)
     return mp.besselk(n, x) if result is None else result
 
 
@@ -132,12 +185,22 @@ def besseli(n: int, x: Any) -> Any:
     Modified Bessel function of the first kind I_n(x).
 
     Uses ARB (python-flint) with adaptive working precision for real
-    ``x > 0``. Falls back to mpmath otherwise.
+    ``x > 0``. Orders 0 and 1 share the cached evaluation used by
+    ``besselk``. Falls back to mpmath otherwise.
     """
     if not HAS_FLINT:
         return mp.besseli(n, x)
+    if n in (0, 1):
+        values = _bessel_order_01(x)
+        return mp.besseli(n, x) if values is None else values[2 + int(n)]
     result = _adaptive(lambda x_arb: x_arb.bessel_i(n), x)
     return mp.besseli(n, x) if result is None else result
+
+
+def cache_clear() -> None:
+    """Clear the cached order-0/1 Bessel values."""
+    if HAS_FLINT:
+        _bessel_order_01_cached.cache_clear()
 
 
 def _besselk0_integral_arb(z_arb: Any) -> Any:

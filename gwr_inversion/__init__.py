@@ -5,7 +5,7 @@ Provides gwr() for Gaver-Wynn-Rho inversion and talbot() for Fixed Talbot.
 """
 
 from ._gmpy2 import HAS_GMPY2  # noqa: F401
-from ._flint import HAS_FLINT  # noqa: F401
+from ._flint import HAS_FLINT, cache_clear  # noqa: F401
 from ._gmpy2_bessel import HAS_GMPY2_BESSEL  # noqa: F401
 
 from ._bessel import besselk, besseli  # noqa: F401
