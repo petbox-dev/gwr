@@ -120,7 +120,7 @@ FRAC_MODIFIER_LIMITS = [
 
 # Hybrid rate analysis (3 subplots: radial, linear, frac)
 HYBRID_LIMITS = [
-    (1e4, 1e6, None, None),    # radial
+    (1e3, 1e6, None, None),    # radial
     (1e-3, 1e3, None, None),   # linear
     (1e-2, 1e3, None, None),   # frac
 ]
@@ -523,7 +523,7 @@ def _hybrid_figure(
     fig.suptitle("Hybrid Rate Analysis — No-Flow Boundary", fontsize=12)
 
     # Display time arrays per geometry
-    radial_display = 10 ** np.linspace(4, 6, 81)
+    radial_display = 10 ** np.linspace(3, 6, 121)
     linear_display = LINEAR_TIME
     frac_display = FRAC_TIME
 
