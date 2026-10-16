@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gwr-inversion"
-version = "1.2.0"
+version = "2.0.0"
 description = "GWR Algorithm Numerical Laplace Inversion"
 readme = "README.md"
 license = "MIT"
