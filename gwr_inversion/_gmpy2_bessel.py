@@ -3,8 +3,14 @@ gmpy2/MPFR backend for Bessel functions K_n(x) and I_n(x), n in {0, 1}.
 
 Uses power series for small x and asymptotic expansion for large x,
 all in gmpy2 MPFR arithmetic at the current context precision.
+
+The K_n power series cancels: its terms grow like e^{x} while K_n(x) ~ e^{-x},
+so about ``2 x log2(e)`` bits are lost. The series path adds that many guard
+bits. The asymptotic expansion has a minimal-term relative error near
+``e^{-2x}``, so it is used once ``2 x log2(e)`` exceeds the working precision.
 """
 
+import math
 from typing import Any
 
 from mpmath import mp
@@ -19,24 +25,36 @@ except ImportError:
     HAS_GMPY2_BESSEL = False
 
 
+_LOG2_E = 1.4426950408889634
+# Bits beyond the working precision at which the asymptotic expansion is used.
+_ASYMPTOTIC_GUARD_BITS = 16
+# Bits beyond the cancellation estimate on the series path.
+_SERIES_GUARD_BITS = 32
+
+
 def _mpf_to_mpfr(x: Any) -> Any:
-    """Convert mpmath mpf to gmpy2 mpfr via string."""
-    return mpfr(str(x))
+    """Convert mpmath mpf to gmpy2 mpfr from the mantissa and exponent (exact
+    when the context precision holds the mantissa)."""
+    sign, mantissa, exponent, _ = mp.mpf(x)._mpf_
+    value = gmpy2.mul_2exp(mpfr(int(mantissa)), int(exponent))
+    return -value if sign else value
 
 
 def _mpfr_to_mpf(x: Any) -> Any:
-    """Convert gmpy2 mpfr to mpmath mpf via string."""
-    dps = mp.dps
-    # Use enough digits to round-trip
-    mp.dps = int(gmpy2.get_context().precision / 3.32) + 5
-    result = mp.mpf(str(x))
-    mp.dps = dps
-    return result
+    """Convert gmpy2 mpfr to mpmath mpf from the mantissa and exponent
+    (rounded to mp.prec)."""
+    mantissa, exponent = x.as_mantissa_exp()
+    return mp.mpf((int(mantissa), int(exponent)))
 
 
-def _prec_digits() -> int:
-    """Return current gmpy2 precision in decimal digits."""
-    return int(gmpy2.get_context().precision / 3.3219280948873626)
+def _uses_asymptotic(x_abs: float, base_bits: int) -> bool:
+    """True when the asymptotic expansion reaches ``base_bits`` of precision."""
+    return 2.0 * x_abs * _LOG2_E > base_bits + _ASYMPTOTIC_GUARD_BITS
+
+
+def _series_guard_bits(x_abs: float) -> int:
+    """Extra bits that compensate the K_n series cancellation at x."""
+    return int(2.0 * x_abs * _LOG2_E + 2.0 * math.log2(x_abs + 2.0)) + _SERIES_GUARD_BITS
 
 
 def _besseli0_series(x: Any) -> Any:
@@ -170,25 +188,26 @@ def _besseli_asymptotic(n: int, x: Any) -> Any:
 def besselk_gmpy2(n: int, x: Any) -> Any:
     """K_n(x) for n in {0, 1} using gmpy2 MPFR arithmetic.
 
-    Input: mpmath mpf. Output: mpmath mpf.
-    Uses extra working bits for the series path to compensate for
-    cancellation (K_n(x) ~ e^{-x} while intermediate terms grow like e^x).
+    Input: mpmath mpf. Output: mpmath mpf at mp.prec.
+    The working precision derives from mp.prec, not the gmpy2 context.
+    Uses ``2 x log2(e)`` extra working bits on the series path to compensate
+    for cancellation (K_n(x) ~ e^{-x} while intermediate terms grow like e^x).
     """
-    if n not in (0, 1):
+    if n not in (0, 1) or not mp.mpf(x) > 0:
         return mp.besselk(n, x)
 
-    prec_digits = _prec_digits()
-    x_abs = float(abs(x))
+    x_abs = float(x)
+    base_bits = mp.prec
 
-    if x_abs > 1.5 * prec_digits:
-        xm = _mpf_to_mpfr(x)
-        result = _besselk_asymptotic(n, xm)
+    if _uses_asymptotic(x_abs, base_bits):
+        with gmpy2.context(gmpy2.get_context(),
+                           precision=base_bits + _ASYMPTOTIC_GUARD_BITS):
+            result = _besselk_asymptotic(n, _mpf_to_mpfr(x))
         return _mpfr_to_mpf(result)
 
     # Series path: boost precision to handle cancellation
-    base_prec = gmpy2.get_context().precision
-    extra_bits = int(x_abs * 1.5) + 64
-    with gmpy2.context(gmpy2.get_context(), precision=base_prec + extra_bits):
+    with gmpy2.context(gmpy2.get_context(),
+                       precision=base_bits + _series_guard_bits(x_abs)):
         xm = _mpf_to_mpfr(x)
         if n == 0:
             result = _besselk0_series(xm)
@@ -204,19 +223,22 @@ def besselk_gmpy2(n: int, x: Any) -> Any:
 def besseli_gmpy2(n: int, x: Any) -> Any:
     """I_n(x) for n in {0, 1} using gmpy2 MPFR arithmetic.
 
-    Input: mpmath mpf. Output: mpmath mpf.
+    Input: mpmath mpf. Output: mpmath mpf at mp.prec.
+    The working precision derives from mp.prec, not the gmpy2 context.
     """
-    if n not in (0, 1):
+    if n not in (0, 1) or not mp.mpf(x) > 0:
         return mp.besseli(n, x)
 
-    xm = _mpf_to_mpfr(x)
-    prec_digits = _prec_digits()
-
-    if float(abs(x)) > 1.5 * prec_digits:
-        result = _besseli_asymptotic(n, xm)
-    elif n == 0:
-        result = _besseli0_series(xm)
-    else:
-        result = _besseli1_series(xm)
+    base_bits = mp.prec
+    use_asymptotic = _uses_asymptotic(float(x), base_bits)
+    with gmpy2.context(gmpy2.get_context(),
+                       precision=base_bits + _ASYMPTOTIC_GUARD_BITS):
+        xm = _mpf_to_mpfr(x)
+        if use_asymptotic:
+            result = _besseli_asymptotic(n, xm)
+        elif n == 0:
+            result = _besseli0_series(xm)
+        else:
+            result = _besseli1_series(xm)
 
     return _mpfr_to_mpf(result)

@@ -143,37 +143,53 @@ gwr(fn, time, backend="auto")     # default: use gmpy2 if installed
 ### Bessel function implementation
 
 `gwr_inversion.besselk` and `gwr_inversion.besseli` dispatch across three
-backends in priority order:
+backends in priority order. Each backend returns a result accurate to the
+current `mp.prec`:
 
-1. **gmpy2/MPFR** (`_gmpy2_bessel.py`) — custom implementations composed from
+1. **python-flint/ARB** (`_flint.py`) — calls `arb.bessel_k` / `arb.bessel_i`
+   from the FLINT library's ball arithmetic, with adaptive working precision
+   (see below).
+
+2. **gmpy2/MPFR** (`_gmpy2_bessel.py`) — custom implementations composed from
    fundamental MPFR operations since gmpy2 does not provide Bessel functions
    natively. Uses power series for small x and asymptotic expansion for large x.
 
-2. **python-flint/ARB** (`_flint.py`) — calls `arb.bessel_k` / `arb.bessel_i`
-   from the FLINT library's ball arithmetic.
-
 3. **mpmath** — fallback when neither optional backend is available.
 
-Both `besselk` and `besseli` require careful precision management because
-`K_n(x)` decays as `e^{-x}` while intermediate series terms grow as `e^{+x}`,
-causing catastrophic cancellation at moderate x. The implementations handle this
-in two ways:
+`K_n(x)` needs careful precision management: it decays as `e^{-x}` while its
+power-series terms grow as `e^{+x}`, so the series loses about `2 x log2(e)`
+bits (about 2.9 bits per unit of x) to cancellation. Neither ARB nor the gmpy2
+series compensates for this on its own. Measured at the base precision, ARB
+`bessel_k(0, x)` returns no correct digits at x = 100 (M=32) or x = 200 (M=64).
 
-- **Extra working bits**: for the series path (small to moderate x), both the
-  gmpy2 and flint backends boost internal precision by `1.5 * |x| + 64` bits
-  to absorb cancellation, then round back to the target precision.
-- **Asymptotic crossover**: for large x (where `x > 1.5 * precision_digits`),
-  both backends switch to the asymptotic expansion
-  `K_n(x) ~ sqrt(pi/2x) * e^{-x} * sum(a_k / x^k)`, which converges without
-  cancellation. The flint backend falls back to mpmath when the required
-  overshoot would more than triple the base precision.
-
-The gmpy2 backend computes `K_1(x)` via the Wronskian identity
-`I_0(x) K_1(x) + I_1(x) K_0(x) = 1/x` rather than a direct series, avoiding a
-second cancellation-prone summation.
+- **ARB: adaptive precision.** ARB results are balls with a rigorous error
+  radius, so the loss is measurable. `_flint.py` evaluates at `mp.prec + 26`
+  bits, reads `rel_accuracy_bits()`, and, if the result is short of
+  `mp.prec + 10` bits, re-evaluates with the deficit plus 32 bits added. One
+  retry is typical for 5 < x < the asymptotic switch point; none outside it.
+- **ARB: K_1 from the Wronskian.** ARB's direct `bessel_k(1, x)` has a slow
+  path near the switch to its asymptotic expansion (30 s or more per call at
+  M=128, x = 200, python-flint 0.9.0). `K_1` is computed from
+  `I_0(x) K_1(x) + I_1(x) K_0(x) = 1/x` instead, which has no cancellation
+  because `I_1 K_0 -> 1/(2x)`. Orders n >= 2 use the upward recurrence
+  `K_{n+1} = K_{n-1} + (2n/x) K_n`.
+- **gmpy2: guard bits and switch point.** The series path adds
+  `2 x log2(e) + 2 log2(x + 2) + 32` bits. The asymptotic expansion
+  `K_n(x) ~ sqrt(pi/2x) * e^{-x} * sum(a_k / x^k)` has a minimal-term relative
+  error near `e^{-2x}`, so it is used once `2 x log2(e) > mp.prec + 16`. The
+  gmpy2 backend also computes `K_1` via the Wronskian.
 
 `besseli` does not suffer from cancellation (all series terms are positive for
 real x > 0) and needs no precision boost.
+
+The fractured-well transforms need `int_0^z K_0(t) dt` and `int_0^z I_0(t) dt`.
+These use closed forms, not numerical quadrature:
+
+- `int_0^z K_0 = (pi z / 2) [K_0(z) L_{-1}(z) + K_1(z) L_0(z)]`, with the
+  modified Struve functions `L_nu` evaluated as `1F2` series in ARB
+  (`arb.hypgeom`), or `mp.struvel` without python-flint.
+- `int_0^z I_0 = z 1F2(1/2; 1, 3/2; z^2/4)` in ARB, or `mp.besseli(0, z, -1)`
+  (derivative order -1 is the integral) without python-flint.
 
 ## Parallel Evaluation
 

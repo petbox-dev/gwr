@@ -21,7 +21,10 @@ from typing import Any, Callable, Optional, Tuple
 import numpy as np
 from mpmath import mp
 
-from ._bessel import besselk as _besselk, besseli as _besseli
+from ._bessel import (
+    besselk as _besselk, besseli as _besseli,
+    besselk0_integral as _besselk0_integral, besseli0_integral as _besseli0_integral,
+)
 
 
 # ============================================================================
@@ -327,8 +330,8 @@ def frac_inf(s: Any, s_eff: Any, xD: float = 0.732) -> Any:
     sqrt_s = mp.sqrt(s_eff)
     c_ = 1 / (2 * s * sqrt_s)
 
-    k0_int_1 = mp.quad(lambda x: _besselk(0, x), [0.0, sqrt_s * (1 - xD)])
-    k0_int_2 = mp.quad(lambda x: _besselk(0, x), [0.0, sqrt_s * (1 + xD)])
+    k0_int_1 = _besselk0_integral(sqrt_s * (1 - xD))
+    k0_int_2 = _besselk0_integral(sqrt_s * (1 + xD))
 
     return c_ * (k0_int_1 + k0_int_2)
 
@@ -353,12 +356,12 @@ def frac_bounded_nf(s: Any, s_eff: Any, reD: float = 100.0,
         \\left( \\int_0^{\\sqrt{s_\\mathrm{eff}}(1-x_D)} K_0 \\, du
         + \\int_0^{\\sqrt{s_\\mathrm{eff}}(1+x_D)} K_0 \\, du \\right)
         + \\frac{K_1(\\sqrt{s_\\mathrm{eff}} \\, r_{eD})}{I_1(\\sqrt{s_\\mathrm{eff}} \\, r_{eD})}
-        \\left( \\tilde{I}_0(\\sqrt{s_\\mathrm{eff}}(1-x_D))
-        + \\tilde{I}_0(\\sqrt{s_\\mathrm{eff}}(1+x_D)) \\right)
+        \\left( \\int_0^{\\sqrt{s_\\mathrm{eff}}(1-x_D)} I_0 \\, du
+        + \\int_0^{\\sqrt{s_\\mathrm{eff}}(1+x_D)} I_0 \\, du \\right)
         \\right]
 
-    where :math:`\\tilde{I}_0(z) = e^{-z} I_0(z)` is the exponentially-scaled
-    modified Bessel function.
+    The K_0 and I_0 integrals use closed forms (modified Struve and
+    1F2 hypergeometric functions), not numerical quadrature.
 
     Parameters
     ----------
@@ -384,17 +387,16 @@ def frac_bounded_nf(s: Any, s_eff: Any, reD: float = 100.0,
     c_ = 1 / (2 * s * sqrt_s)
 
     # Infinite-acting component
-    k0_int_1 = mp.quad(lambda x: _besselk(0, x), [0.0, sqrt_s * (1 - xD)])
-    k0_int_2 = mp.quad(lambda x: _besselk(0, x), [0.0, sqrt_s * (1 + xD)])
+    k0_int_1 = _besselk0_integral(sqrt_s * (1 - xD))
+    k0_int_2 = _besselk0_integral(sqrt_s * (1 + xD))
     inf_part = k0_int_1 + k0_int_2
 
     # Bounded correction
     k1_reD = _besselk(1, sqrt_s * reD)
     i1_reD = _besseli(1, sqrt_s * reD)
-    # Exponentially-scaled I_0 via mpmath's _besseli(0, z, -1)
-    i0_scaled_1 = mp.besseli(0, sqrt_s * (1 - xD), -1)
-    i0_scaled_2 = mp.besseli(0, sqrt_s * (1 + xD), -1)
-    nf_part = k1_reD / i1_reD * (i0_scaled_1 + i0_scaled_2)
+    i0_int_1 = _besseli0_integral(sqrt_s * (1 - xD))
+    i0_int_2 = _besseli0_integral(sqrt_s * (1 + xD))
+    nf_part = k1_reD / i1_reD * (i0_int_1 + i0_int_2)
 
     return c_ * (inf_part + nf_part)
 
@@ -418,8 +420,8 @@ def frac_bounded_cp(s: Any, s_eff: Any, reD: float = 100.0,
         \\left( \\int_0^{\\sqrt{s_\\mathrm{eff}}(1-x_D)} K_0 \\, du
         + \\int_0^{\\sqrt{s_\\mathrm{eff}}(1+x_D)} K_0 \\, du \\right)
         - \\frac{K_0(\\sqrt{s_\\mathrm{eff}} \\, r_{eD})}{I_0(\\sqrt{s_\\mathrm{eff}} \\, r_{eD})}
-        \\left( \\tilde{I}_0(\\sqrt{s_\\mathrm{eff}}(1-x_D))
-        + \\tilde{I}_0(\\sqrt{s_\\mathrm{eff}}(1+x_D)) \\right)
+        \\left( \\int_0^{\\sqrt{s_\\mathrm{eff}}(1-x_D)} I_0 \\, du
+        + \\int_0^{\\sqrt{s_\\mathrm{eff}}(1+x_D)} I_0 \\, du \\right)
         \\right]
 
     Parameters
@@ -446,16 +448,16 @@ def frac_bounded_cp(s: Any, s_eff: Any, reD: float = 100.0,
     c_ = 1 / (2 * s * sqrt_s)
 
     # Infinite-acting component
-    k0_int_1 = mp.quad(lambda x: _besselk(0, x), [0.0, sqrt_s * (1 - xD)])
-    k0_int_2 = mp.quad(lambda x: _besselk(0, x), [0.0, sqrt_s * (1 + xD)])
+    k0_int_1 = _besselk0_integral(sqrt_s * (1 - xD))
+    k0_int_2 = _besselk0_integral(sqrt_s * (1 + xD))
     inf_part = k0_int_1 + k0_int_2
 
     # Constant-pressure correction
     k0_reD = _besselk(0, sqrt_s * reD)
     i0_reD = _besseli(0, sqrt_s * reD)
-    i0_scaled_1 = mp.besseli(0, sqrt_s * (1 - xD), -1)
-    i0_scaled_2 = mp.besseli(0, sqrt_s * (1 + xD), -1)
-    cp_part = k0_reD / i0_reD * (i0_scaled_1 + i0_scaled_2)
+    i0_int_1 = _besseli0_integral(sqrt_s * (1 - xD))
+    i0_int_2 = _besseli0_integral(sqrt_s * (1 + xD))
+    cp_part = k0_reD / i0_reD * (i0_int_1 + i0_int_2)
 
     return c_ * (inf_part - cp_part)
 

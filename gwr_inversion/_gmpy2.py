@@ -91,14 +91,27 @@ def gm_to_mpf(val: Any, precin: int) -> Any:
     """Convert gmpy2 mpfr to mpmath mpf for public API consistency."""
     dps = mp.dps
     mp.dps = precin
-    result = mp.mpf(str(val))
+    if gmpy2.is_finite(val):
+        mantissa, exponent = val.as_mantissa_exp()
+        result = mp.mpf((int(mantissa), int(exponent)))
+    else:
+        result = mp.mpf(str(val))  # inf and nan carry no mantissa
     mp.dps = dps
     return result
 
 
 def gm_from_mpf(val: Any, precin: int) -> Any:
-    """Convert mpmath mpf to gmpy2 mpfr."""
-    return mpfr(str(val))
+    """Convert mpmath mpf to gmpy2 mpfr from the mantissa and exponent.
+
+    Other types (Python int/float, mpc) keep the string conversion.
+    """
+    if not isinstance(val, mp.mpf):
+        return mpfr(str(val))
+    sign, mantissa, exponent, _ = val._mpf_
+    if mantissa == 0:
+        return mpfr(str(val))  # zero, inf and nan carry no mantissa
+    value = gmpy2.mul_2exp(mpfr(int(mantissa)), int(exponent))
+    return -value if sign else value
 
 
 # --- Backend dispatch ---
