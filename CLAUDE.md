@@ -48,7 +48,7 @@ gwr_inversion/
 ├── _parallel.py   # Parallel time-point dispatch (ProcessPoolExecutor)
 ```
 
-- **`__init__.py`** — Entry points. `gwr()` handles input polymorphism (float/list/ndarray), precision context, backend selection, and parallel dispatch. Returns `mp.mpf` regardless of backend.
+- **`__init__.py`** — Entry points. `gwr()` handles input polymorphism (float/list/ndarray), precision context, backend selection, and parallel dispatch. Returns `float` / float64 `ndarray` by default (`dtype="float"`); `dtype="mpf"` returns `mp.mpf` regardless of backend.
 - **`_gmpy2.py`** — Provides `get_ops(backend)` returning a dict of math operations (`log2`, `mpf`, `fac`, `binomial`, `to_mpf`, `from_mpf`). When gmpy2 is installed and `backend="auto"`, uses MPFR via gmpy2. Also provides `gmpy2_precision(precin)` context manager to set gmpy2 context precision for all arithmetic within a block.
 - **`_flint.py`** — Provides `besselk(n, x)` and `besseli(n, x)` using ARB (python-flint) when available. Raises ARB working precision until `rel_accuracy_bits()` reaches `mp.prec + 10` (ARB does not compensate the K_n series cancellation of ~`2x log2(e)` bits). `K_1` comes from the Wronskian (ARB's direct `bessel_k(1)` has a slow path near x = 50-300). Also `besselk0_integral` / `besseli0_integral` via Struve/1F2 closed forms. Falls back to mpmath.
 - **`_bessel.py`** — `besselk`/`besseli` dispatch (ARB, then gmpy2, then mpmath); users call these in their Laplace transform functions.
