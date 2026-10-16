@@ -878,6 +878,12 @@ def hybrid_rate(
     correction to stabilize the solution at early time, then computes
     the standard suite of rate-transient analysis diagnostic functions.
 
+    The correction is written in ``t_D`` with a unit time scale, whatever the
+    geometry's reference length. With ``b = 0.5`` it is 5% of ``q_D`` at
+    ``t_D = 10`` and 0.1% at ``t_D = 100`` for radial flow in ``r_w`` units
+    (``reD = 1000``), so ``q_{Ddr}`` there differs from the uncorrected rate
+    (1.91 vs 2.40 at ``t_D = 10``) until about ``t_D = 100``.
+
     Fulford, D. S., and Blasingame, T. A. 2013. Evaluation of Time-Rate
     Performance of Shale Wells using the Transient Hyperbolic Relation.
     Presented at SPE Unconventional Resources Conference – Canada in Calgary,
