@@ -93,13 +93,18 @@ def _adaptive(evaluate: Callable[[Any], Any], x: Any) -> Optional[Any]:
         return None
     if not x_mpf > 0:
         return None
+    return _adaptive_positive(evaluate, x_mpf)
 
+
+def _adaptive_positive(evaluate: Callable[[Any], Any], x_mpf: Any) -> Optional[Any]:
+    """``_adaptive`` for an mpf already known to be positive and finite."""
     target_bits = mp.prec + _TARGET_GUARD_BITS
     working_bits = target_bits + _INITIAL_GUARD_BITS
     previous_bits = _flint_ctx.prec
     try:
-        # The conversion is exact when the context holds the full mantissa.
-        _flint_ctx.prec = max(working_bits, mp.prec + 64)
+        # arb(fmpz) and the power of 2 are exact, so the product is exact once
+        # the context holds the mantissa's bit count.
+        _flint_ctx.prec = max(working_bits, x_mpf._mpf_[3])
         x_arb = _mpf_to_arb(x_mpf)
         for _ in range(_MAX_ATTEMPTS):
             _flint_ctx.prec = working_bits
@@ -162,18 +167,20 @@ def _bessel_order_01_cached(x_key: Tuple[Any, ...], precision_bits: int) -> Opti
     """
     x_mpf = mp.mpf.__new__(mp.mpf)
     x_mpf._mpf_ = x_key
-    return _adaptive(_bessel_order_01_arb, x_mpf)
+    return _adaptive_positive(_bessel_order_01_arb, x_mpf)
 
 
 def _bessel_order_01(x: Any) -> Optional[Any]:
     """Cached (K_0, K_1, I_0, I_1) at x, or None for non-positive or non-real x."""
-    try:
-        x_mpf = mp.mpf(x)
-    except TypeError:
+    if not isinstance(x, mp.mpf):
+        try:
+            x = mp.mpf(x)
+        except TypeError:
+            return None
+    sign, mantissa, _, _ = x._mpf_
+    if sign or not mantissa:  # negative, zero, inf or nan
         return None
-    if not x_mpf > 0:
-        return None
-    return _bessel_order_01_cached(x_mpf._mpf_, mp.prec)
+    return _bessel_order_01_cached(x._mpf_, mp.prec)
 
 
 def besselk(n: int, x: Any) -> Any:

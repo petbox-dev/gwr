@@ -1,8 +1,10 @@
 """GWR algorithm implementation and public gwr() entry point."""
 from __future__ import annotations
 
+from functools import lru_cache
 from inspect import signature
-from typing import Any, Callable, Dict, Iterable, List, Optional, Union
+from math import factorial
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 from mpmath import mp
@@ -13,6 +15,25 @@ from ._gmpy2 import get_ops, gm_to_mpf, gmpy2_precision
 # ---------------------------------------------------------------------------
 # Core algorithm (single time point)
 # ---------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=16)
+def _gaver_integers(M: int) -> Tuple[List[int], List[List[int]]]:
+    """
+    Exact integers of the Gaver functional for ``n = 1..M``: the coefficient
+    ``(2n)! / (n ((n-1)!)^2) = n C(2n, n)`` and the binomial row ``C(n, i)``.
+    Both mpmath mpf and gmpy2 mpfr multiply exactly by a Python int, so the
+    sum needs no per-term conversion and each coefficient one rounding.
+    """
+    # math.comb needs Python 3.8; the package supports 3.7.
+    factorials = [factorial(k) for k in range(2 * M + 1)]
+    coefficients = [0] * (M + 1)
+    rows: List[List[int]] = [[] for _ in range(M + 1)]
+    for n in range(1, M + 1):
+        coefficients[n] = factorials[2 * n] // (n * factorials[n - 1] ** 2)
+        rows[n] = [factorials[n] // (factorials[i] * factorials[n - i]) for i in range(n + 1)]
+    return coefficients, rows
+
 
 
 def gwr_single(
@@ -63,21 +84,19 @@ def gwr_single(
     G0: List[Any] = [zero] * M
     Gp: List[Any] = [zero] * M
 
+    gaver_coefficients, binomial_rows = _gaver_integers(M)
     M1 = M
     for n in range(1, M + 1):
         try:
-            n_fac = ops["fac"](n - 1, precin)
-            coeff = tau * ops["fac"](2 * n, precin) / (n * n_fac * n_fac)
-
+            row = binomial_rows[n]
             s = zero
             for i in range(n + 1):
-                binom = ops["binomial"](n, i, precin)
                 if i % 2 == 1:
-                    s = s - binom * fni[n + i]
+                    s = s - row[i] * fni[n + i]
                 else:
-                    s = s + binom * fni[n + i]
+                    s = s + row[i] * fni[n + i]
 
-            G0[n - 1] = coeff * s
+            G0[n - 1] = tau * gaver_coefficients[n] * s
 
         except Exception as e:
             if n == 1:

@@ -54,14 +54,6 @@ def mp_mpf(val: Any, precin: int) -> Any:
     return mp.mpf(val)
 
 
-def mp_fac(n: int, precin: int) -> Any:
-    return mp.fac(n)
-
-
-def mp_binomial(n: int, i: int, precin: int) -> Any:
-    return mp.binomial(n, i)
-
-
 def mp_to_mpf(val: Any, precin: int) -> Any:
     return val
 
@@ -78,14 +70,6 @@ def gm_log2(precin: int) -> Any:
 
 def gm_mpf(val: Any, precin: int) -> Any:
     return mpfr(str(val))
-
-
-def gm_fac(n: int, precin: int) -> Any:
-    return mpfr(gmpy2.fac(n))
-
-
-def gm_binomial(n: int, i: int, precin: int) -> Any:
-    return mpfr(gmpy2.comb(n, i))
 
 
 def gm_to_mpf(val: Any, precin: int) -> Any:
@@ -116,6 +100,8 @@ def gm_from_mpf(val: Any, precin: int) -> Any:
 
 
 # --- Backend dispatch ---
+# The Gaver coefficients and binomials are exact Python ints cached in
+# _gwr._gaver_integers, so the backends supply only these conversions.
 
 OpsDict = Dict[str, Callable[..., Any]]
 
@@ -123,16 +109,12 @@ BACKENDS: Dict[str, OpsDict] = {
     "mpmath": {
         "log2": mp_log2,
         "mpf": mp_mpf,
-        "fac": mp_fac,
-        "binomial": mp_binomial,
         "to_mpf": mp_to_mpf,
         "from_mpf": mp_from_mpf,
     },
     "gmpy2": {
         "log2": gm_log2,
         "mpf": gm_mpf,
-        "fac": gm_fac,
-        "binomial": gm_binomial,
         "to_mpf": gm_to_mpf,
         "from_mpf": gm_from_mpf,
     },
