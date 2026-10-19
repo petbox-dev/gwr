@@ -346,7 +346,9 @@ def frac_inf(s: Any, s_eff: Any, xD: float = 0.732) -> Any:
 
         xD : float
             Dimensionless position along the fracture half-length.
-            Default ``0.732`` (uniform-flux equivalent point).
+            Default ``0.732``: the uniform-flux solution there equals the
+            infinite-conductivity fracture (Gringarten et al. 1974); ``0`` is
+            the uniform-flux wellbore pressure.
 
     Returns
     -------
@@ -402,7 +404,9 @@ def frac_bounded_nf(s: Any, s_eff: Any, reD: float = 100.0,
 
         xD : float
             Dimensionless position along the fracture half-length.
-            Default ``0.732`` (uniform-flux equivalent point).
+            Default ``0.732``: the uniform-flux solution there equals the
+            infinite-conductivity fracture (Gringarten et al. 1974); ``0`` is
+            the uniform-flux wellbore pressure.
 
     Returns
     -------
@@ -464,7 +468,9 @@ def frac_bounded_cp(s: Any, s_eff: Any, reD: float = 100.0,
 
         xD : float
             Dimensionless position along the fracture half-length.
-            Default ``0.732`` (uniform-flux equivalent point).
+            Default ``0.732``: the uniform-flux solution there equals the
+            infinite-conductivity fracture (Gringarten et al. 1974); ``0`` is
+            the uniform-flux wellbore pressure.
 
     Returns
     -------

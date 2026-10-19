@@ -71,6 +71,15 @@ Key patterns:
 - Graceful degradation: reduces M if precision is insufficient
 - Backend ops dict avoids import-time gmpy2 dependency
 
+## Outstanding work
+
+Deferred work, unexplained anomalies and open decisions live in `docs/todo/` (one
+document per item, with its evidence). Read `docs/todo/README.md` before adding an
+item; the row in its open table is part of adding one. Never leave `# TODO:` in code.
+
+The public API is documented in `docs/api.md`; the README's API table links into it.
+Keep both in step with `gwr_inversion/__init__.py` when an export changes.
+
 ## Code Standards
 
 - Max line length: 100 (ruff)

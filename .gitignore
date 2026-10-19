@@ -35,4 +35,8 @@ htmlcov/
 
 # Claude
 .claude/
-docs/
+# docs/ holds local reference material (lecture notes, planning drafts); only the
+# todo index and the API reference are tracked.
+docs/*
+!docs/todo/
+!docs/api.md
