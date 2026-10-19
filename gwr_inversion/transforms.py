@@ -17,11 +17,12 @@ References
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import numpy as np
 from mpmath import mp
 
+from . import _arb_transforms, _flint
 from ._bessel import (
     besselk as _besselk, besseli as _besseli,
     besselk0_integral as _besselk0_integral, besseli0_integral as _besseli0_integral,
@@ -753,6 +754,18 @@ def output_derivative(pwd: Any, s: Any) -> Any:
 # ============================================================================
 
 
+# Ball-arithmetic versions of the geometries where they measured faster
+# (python-flint only); see _arb_transforms for why the others are not here.
+_ARB_GEOMETRIES: Dict[Callable[..., Any], Callable[..., Any]] = {}
+if _flint.HAS_FLINT:
+    _ARB_GEOMETRIES = {
+        radial_inf: _arb_transforms.radial_inf,
+        linear_inf: _arb_transforms.linear_inf,
+        linear_bounded_nf: _arb_transforms.linear_bounded_nf,
+        linear_bounded_cp: _arb_transforms.linear_bounded_cp,
+    }
+
+
 def lap_transform(
     s: Any,
     geometry_fn: Callable[..., Any],
@@ -841,6 +854,15 @@ def lap_transform(
         >>> pwd_fn = lambda s: lap_transform(s, linear_bounded_nf, xD=0.0)
         >>> qD = gwr(lambda s: 1 / (s**2 * pwd_fn(s)), time, M=8)
     """
+    # radial_inf and the linear geometries run in ARB ball arithmetic when
+    # python-flint is installed (same quantity); others use the mpf code.
+    arb_geometry = _ARB_GEOMETRIES.get(geometry_fn)
+    if arb_geometry is not None:
+        result = _arb_transforms.lap_transform(
+            s, arb_geometry, cD, cDd, aD, lam, omega, skin, geom_kwargs)
+        if result is not None:
+            return result
+
     # 1. Naturally fractured: modify s → s_eff
     if lam is not None and omega is not None:
         s_eff = apply_dual_porosity(s, lam, omega)

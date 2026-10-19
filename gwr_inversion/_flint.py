@@ -49,6 +49,19 @@ _MAX_ATTEMPTS = 8
 _ORDER_01_CACHE_SIZE = 32
 
 
+# A deficit larger than this is treated as "no finite bound" (rel_accuracy_bits
+# returns about -2^63 for a ball containing zero or infinity).
+_UNBOUNDED_DEFICIT_BITS = 1 << 20
+
+
+def _next_working_bits(working_bits: int, target_bits: int, accuracy_bits: int) -> int:
+    """Working precision for the next attempt after reaching ``accuracy_bits``."""
+    deficit_bits = target_bits - accuracy_bits
+    if deficit_bits > _UNBOUNDED_DEFICIT_BITS:
+        return 2 * working_bits
+    return working_bits + max(deficit_bits, 0) + _RETRY_GUARD_BITS
+
+
 def _arb_to_mpf(x: Any) -> Any:
     """Convert the midpoint of an arb ball to mpmath mpf (rounded to mp.prec)."""
     result = mp.mpf.__new__(mp.mpf)
@@ -99,7 +112,7 @@ def _adaptive(evaluate: Callable[[Any], Any], x: Any) -> Optional[Any]:
                 accuracy_bits = value.rel_accuracy_bits()
                 if accuracy_bits >= target_bits:
                     return _arb_to_mpf(value)
-            working_bits += max(target_bits - accuracy_bits, 0) + _RETRY_GUARD_BITS
+            working_bits = _next_working_bits(working_bits, target_bits, accuracy_bits)
         return None
     finally:
         _flint_ctx.prec = previous_bits
@@ -218,46 +231,62 @@ def _bessel_k_over_i_arb(z_arb: Any, order: int) -> Any:
     return (1 / z_arb - i1 * k0) / i0 / i1
 
 
-def bessel_k_over_i(
-    order: int, z: Any, log2_sensitivity: Callable[[Any], float],
-) -> Optional[Any]:
+def bessel_k_over_i_ball(
+    order: int, z_arb: Any, log2_sensitivity: Callable[[Any], float], first_bits: int,
+) -> Optional[Tuple[Any, float]]:
     """
-    ``K_order(z) / I_order(z)`` to the relative accuracy the caller needs.
+    Ball for ``K_order(z) / I_order(z)`` and the bits the caller needs from it.
 
     ``log2_sensitivity(r)`` is log2 of ``|d ln(result) / d ln(r)|`` when the
-    ratio has value ``r``, non-decreasing in ``r``. The ratio is accurate to
-    ``mp.prec + 10 + log2_sensitivity(R)`` bits; ``mp.zero`` is returned when
-    that is <= 0, because dropping the term then changes the result by less
-    than ``2^-(mp.prec + 10)``. The ball's own radius decides when the ratio
-    is accurate enough. Returns None when the loop does not converge.
+    ratio has value ``r``, non-decreasing in ``r``; the caller needs
+    ``mp.prec + 10 + log2_sensitivity(R)`` bits. The first evaluation runs at
+    ``first_bits``; its midpoint gives the magnitude of R. Returns
+    ``(ball, needed_bits)`` once the ball's relative accuracy covers
+    ``needed_bits`` (or ``needed_bits <= 0``: the term is negligible), and
+    None when the loop does not converge (for example when the radius of
+    ``z_arb`` itself limits the accuracy).
     """
     target_bits = mp.prec + _TARGET_GUARD_BITS
-    # Full precision first: its midpoint gives the magnitude, and its accuracy
-    # (reduced by the series cancellation) usually already covers the need.
-    working_bits = target_bits + _INITIAL_GUARD_BITS
+    working_bits = first_bits
     previous_bits = _flint_ctx.prec
     try:
-        _flint_ctx.prec = mp.prec + 64
-        z_arb = _mpf_to_arb(mp.mpf(z))
         for _ in range(_MAX_ATTEMPTS + 2):
             _flint_ctx.prec = working_bits
             ratio = _bessel_k_over_i_arb(z_arb, order)
             accuracy_bits = ratio.rel_accuracy_bits()
             if accuracy_bits < _RATIO_MAGNITUDE_BITS:
-                working_bits = max(2 * working_bits, target_bits + _INITIAL_GUARD_BITS)
-                working_bits += max(-accuracy_bits, 0)
+                working_bits = max(_next_working_bits(working_bits, target_bits, accuracy_bits),
+                                   target_bits + _INITIAL_GUARD_BITS)
                 continue
-            midpoint = _arb_to_mpf(ratio)
             # 2 |midpoint| bounds |ratio| from above once 4+ bits are correct.
-            needed_bits = target_bits + log2_sensitivity(2 * abs(midpoint))
-            if needed_bits <= 0:
-                return mp.zero
-            if accuracy_bits >= needed_bits:
-                return midpoint
+            needed_bits = target_bits + log2_sensitivity(2 * abs(_arb_to_mpf(ratio)))
+            if needed_bits <= 0 or accuracy_bits >= needed_bits:
+                return ratio, needed_bits
             working_bits += int(needed_bits - accuracy_bits) + _RETRY_GUARD_BITS
         return None
     finally:
         _flint_ctx.prec = previous_bits
+
+
+def bessel_k_over_i(
+    order: int, z: Any, log2_sensitivity: Callable[[Any], float], first_bits: int,
+) -> Optional[Any]:
+    """
+    ``K_order(z) / I_order(z)`` as an mpf, accurate to the bits the caller
+    needs (see ``bessel_k_over_i_ball``); ``mp.zero`` when the term is
+    negligible. Returns None when the loop does not converge.
+    """
+    previous_bits = _flint_ctx.prec
+    try:
+        _flint_ctx.prec = mp.prec + 64
+        z_arb = _mpf_to_arb(mp.mpf(z))
+    finally:
+        _flint_ctx.prec = previous_bits
+    found = bessel_k_over_i_ball(order, z_arb, log2_sensitivity, first_bits)
+    if found is None:
+        return None
+    ratio, needed_bits = found
+    return mp.zero if needed_bits <= 0 else _arb_to_mpf(ratio)
 
 
 def _besselk0_integral_arb(z_arb: Any) -> Any:

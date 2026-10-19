@@ -1,6 +1,6 @@
 """Bessel function dispatch across backends (flint, gmpy2, mpmath)."""
 
-from typing import Any, Callable
+from typing import Any, Callable, Optional, Tuple
 
 from mpmath import mp
 
@@ -49,6 +49,38 @@ _TWO_LOG2_E = 2.8853900817779268
 _RATIO_PROBE_PRECISION = 64
 
 
+def guard_sensitivity(log2_sensitivity: Callable[[Any], float]) -> Callable[[Any], float]:
+    """Treat a zero denominator in the caller's formula as "no bits can be spared"."""
+    def guarded_sensitivity(ratio: Any) -> float:
+        try:
+            return log2_sensitivity(ratio)
+        except ZeroDivisionError:
+            return float("inf")
+    return guarded_sensitivity
+
+
+def plan_k_over_i(
+    z_float: float, log2_sensitivity: Callable[[Any], float],
+) -> Tuple[Optional[Any], int]:
+    """
+    For ``K_n(z) / I_n(z)`` at ``z = z_float``: return ``(bound, first_bits)``.
+
+    ``bound`` is an upper bound on the ratio when the term is negligible for the
+    caller (no evaluation needed), else None. ``first_bits`` is the ARB
+    precision for the first evaluation: the bits the bound says are needed,
+    plus guard bits, instead of full precision.
+    """
+    target_bits = mp.prec + 10
+    full_bits = target_bits + 16
+    if z_float < 1.0:
+        return None, full_bits
+    ratio_bound = mp.mpf(2) ** (_RATIO_BOUND_BITS - _TWO_LOG2_E * z_float)
+    needed_bits = target_bits + log2_sensitivity(ratio_bound)
+    if needed_bits <= 0:
+        return ratio_bound, 0
+    return None, int(min(max(needed_bits, 0.0) + 32, full_bits))
+
+
 def bessel_k_over_i(order: int, z: Any, log2_sensitivity: Callable[[Any], float]) -> Any:
     """
     ``K_order(z) / I_order(z)`` (order 0 or 1) only as accurate as the result needs.
@@ -65,22 +97,14 @@ def bessel_k_over_i(order: int, z: Any, log2_sensitivity: Callable[[Any], float]
     ``mp.zero`` when that is <= 0 (dropping the term moves the result by less
     than ``2^-(mp.prec + 10)``).
     """
-    def guarded_sensitivity(ratio: Any) -> float:
-        # A zero denominator in the caller's formula means no bits can be spared.
-        try:
-            return log2_sensitivity(ratio)
-        except ZeroDivisionError:
-            return float("inf")
-
+    guarded_sensitivity = guard_sensitivity(log2_sensitivity)
     target_bits = mp.prec + 10
     z_mpf = mp.mpf(z)
-    z_float = float(z_mpf)
-    if z_float >= 1.0:
-        ratio_bound = mp.mpf(2) ** (_RATIO_BOUND_BITS - _TWO_LOG2_E * z_float)
-        if target_bits + guarded_sensitivity(ratio_bound) <= 0:
-            return mp.zero
+    bound, first_bits = plan_k_over_i(float(z_mpf), guarded_sensitivity)
+    if bound is not None:
+        return mp.zero
     if HAS_FLINT and z_mpf > 0:
-        ratio = bessel_k_over_i_flint(order, z_mpf, guarded_sensitivity)
+        ratio = bessel_k_over_i_flint(order, z_mpf, guarded_sensitivity, first_bits)
         if ratio is not None:
             return ratio
     with mp.workprec(_RATIO_PROBE_PRECISION):
