@@ -1,0 +1,97 @@
+# Tests on every supported Python and builds the distribution.
+#
+# gwr-inversion is pure Python: one py3-none-any wheel serves every version, so
+# the build job makes it once. The test matrix is what checks each version.
+# Nothing here publishes to PyPI.
+
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    # 3.15 is a pre-release until October 2026; its failures do not fail the run.
+    continue-on-error: ${{ matrix.python-version == '3.15' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
+        include:
+          # The persistent process pool spawns on Windows and macOS and forks on
+          # Linux (docs/todo/open/parallel-pool-keeps-running-after-a-failed-call.md).
+          - os: windows-latest
+            python-version: "3.12"
+          - os: macos-latest
+            python-version: "3.12"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
+      - name: Install the package with scipy
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[hybrid]" pytest
+      - name: Install gmpy2 and python-flint where a wheel exists
+        # A Python too new for their published wheels would otherwise build them
+        # from source; the library falls back to mpmath without them.
+        shell: bash
+        run: |
+          python -m pip install --only-binary=:all: "gmpy2>=2.1.0" || echo "::warning::no gmpy2 wheel for this Python"
+          python -m pip install --only-binary=:all: "python-flint>=0.9.0" || echo "::warning::no python-flint wheel for this Python"
+      - name: Show the backends in use
+        run: python -c "import gwr_inversion as g; print('gmpy2', g.HAS_GMPY2, 'flint', g.HAS_FLINT)"
+      - name: Run the tests
+        run: python -m pytest test/ -q --ignore=test/rust-bench
+
+  test-without-optional-dependencies:
+    # The mpmath-only fallback path. The reference-data tests pin the gmpy2
+    # backend's rounding (docs/todo/open/reference-tests-require-gmpy2.md), so
+    # they are left out here until that item is settled.
+    name: test (ubuntu-latest, Python 3.12, numpy + mpmath only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the package without extras
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . pytest
+      - name: Run the tests
+        run: >
+          python -m pytest test/ -q --ignore=test/rust-bench
+          --ignore=test/test_ln.py --ignore=test/test_unit_step.py
+          --ignore=test/test_radial_flow.py --ignore=test/test_input_types.py
+          --ignore=test/test_f0_hard.py
+
+  build:
+    name: build wheel and sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          python -m twine check dist/*
+      - name: Install the built wheel and import it
+        run: |
+          python -m pip install dist/*.whl
+          cd /tmp && python -c "import gwr_inversion; print(gwr_inversion.gwr(lambda s: 1 / (s + 1), 1.0))"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/

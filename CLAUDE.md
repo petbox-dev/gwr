@@ -18,7 +18,7 @@ pip install -e ".[hybrid]" # scipy: needed by hybrid_rate / Model.hybrid_rate
 pip install -e ".[all]"    # all three
 ```
 
-Dependencies: `numpy>=1.17`, `mpmath>=1.1.0`. Optional: `gmpy2>=2.1.0`, `python-flint>=0.9.0`, `scipy>=1.6`. Requires Python >=3.7.
+Dependencies: `numpy>=1.17`, `mpmath>=1.1.0`. Optional: `gmpy2>=2.1.0`, `python-flint>=0.9.0`, `scipy>=1.6`. Requires Python >=3.10 (python-flint 0.9 needs it). CI: `.github/workflows/ci.yml`.
 
 ## Testing
 

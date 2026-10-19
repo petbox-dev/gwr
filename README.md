@@ -42,21 +42,19 @@ results inside a transform.
 ```shell
 pip install gwr_inversion                # base install
 pip install gwr_inversion[fast]          # + gmpy2: faster GWR arithmetic
-pip install gwr_inversion[flint]         # + python-flint: fast Bessel functions (Python >= 3.10)
+pip install gwr_inversion[flint]         # + python-flint: fast Bessel functions
 pip install gwr_inversion[hybrid]        # + scipy: hybrid_rate / Model.hybrid_rate
 pip install gwr_inversion[all]           # all three
 ```
 
-The required dependencies are `numpy` and `mpmath`. The optional ones are
-independent and complementary:
+Python 3.10 or later. The required dependencies are `numpy` and `mpmath`. The
+optional ones are independent and complementary:
 
 - **gmpy2** (`[fast]`) runs the GWR arithmetic (the Gaver sums and the
   Wynn-rho recursion) in MPFR, and provides a gmpy2 Bessel backend.
 - **python-flint** (`[flint]`) provides ARB Bessel functions and fracture
   integrals, and evaluates `radial_inf` and the linear geometries entirely in
   ball arithmetic. Most of the speedup on reservoir solutions comes from here.
-  python-flint 0.9 needs Python 3.10 or later; on older Pythons the package
-  uses gmpy2 or mpmath instead.
 - **scipy** (`[hybrid]`) is needed only by `hybrid_rate`.
 
 `[all]` is the recommended install.
@@ -245,7 +243,8 @@ series for `K_0`, and `z 1F2(1/2; 1, 3/2; z^2/4)` for `I_0`.
 - `cache_clear()` now empties the Bessel and Gaver caches.
 - Internal names no longer exported from the package root: `get_ops`,
   `gm_to_mpf`, `gmpy2_precision`, `gwr_single`.
-- The `[flint]` extra requires python-flint >= 0.9 and Python >= 3.10.
+- Python 3.10 or later is required (1.x declared 3.7); the `[flint]` extra
+  requires python-flint >= 0.9.
 
 ## Development
 

@@ -8,7 +8,7 @@ version = "2.0.0"
 description = "GWR Algorithm Numerical Laplace Inversion"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.7"
+requires-python = ">=3.10"
 authors = [
     { name = "David S. Fulford", email = "petbox.dev@gmail.com" },
 ]
@@ -19,8 +19,13 @@ classifiers = [
     "Intended Audience :: Education",
     "Intended Audience :: Developers",
     "Natural Language :: English",
-    "Programming Language :: Python :: 3.7",
-    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: Implementation :: CPython",
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Mathematics",
@@ -39,10 +44,9 @@ packages = ["gwr_inversion"]
 
 [project.optional-dependencies]
 fast = ["gmpy2>=2.1.0"]
-# python-flint 0.9 requires Python >= 3.10; older Pythons fall back to gmpy2 / mpmath Bessel.
-flint = ["python-flint>=0.9.0; python_version >= '3.10'"]
+flint = ["python-flint>=0.9.0"]
 hybrid = ["scipy>=1.6"]  # transforms.hybrid_rate / Model.hybrid_rate (scipy.integrate.simpson)
-all = ["gmpy2>=2.1.0", "python-flint>=0.9.0; python_version >= '3.10'", "scipy>=1.6"]
+all = ["gmpy2>=2.1.0", "python-flint>=0.9.0", "scipy>=1.6"]
 
 [tool.ruff]
 line-length = 100

@@ -25,7 +25,8 @@ def _gaver_integers(M: int) -> Tuple[List[int], List[List[int]]]:
     Both mpmath mpf and gmpy2 mpfr multiply exactly by a Python int, so the
     sum needs no per-term conversion and each coefficient one rounding.
     """
-    # math.comb needs Python 3.8; the package supports 3.7.
+    # Factorials give n C(2n, n) exactly; Pascal's rule below builds the rows faster
+    # than math.comb per entry.
     factorials = [factorial(k) for k in range(2 * M + 1)]
     coefficients = [0] * (M + 1)
     rows: List[List[int]] = [[1] for _ in range(M + 1)]
