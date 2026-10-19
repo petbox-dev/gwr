@@ -68,3 +68,29 @@ class TestInputTypes:
         )
         assert isinstance(result, np.ndarray)
         assert result.dtype == object
+
+
+def _decaying(s):
+    """L[e^{-t}]: refinement targets its late, small values."""
+    return 1 / (s + 1)
+
+
+def test_refine_treats_a_generator_like_a_list():
+    times = [0.1, 1.0, 30.0]
+    as_list = gwr(_decaying, times, 8, refine=True)
+    as_generator = gwr(_decaying, (time for time in times), 8, refine=True)
+    assert as_generator == as_list
+    assert as_list[2] != gwr(_decaying, times, 8)[2]  # the late point was refined
+
+
+def test_refine_accepts_a_row_vector_and_empty_input():
+    times = [0.1, 1.0, 30.0]
+    row = gwr(_decaying, np.array([times]), 8, refine=True)
+    np.testing.assert_array_equal(row, np.asarray(gwr(_decaying, times, 8, refine=True)))
+    assert gwr(_decaying, [], 8, refine=True) == []
+
+
+def test_refine_scales_an_explicit_precision_with_the_doubled_order():
+    times = [0.01, 1.0, 30.0]
+    refined = gwr(_decaying, times, 32, precin=34, refine=True, refine_threshold=1.0)
+    assert refined[2] == gwr(_decaying, 30.0, 64)

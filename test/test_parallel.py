@@ -37,9 +37,11 @@ class TestParallel:
         np.testing.assert_allclose(seq, par, atol=1e-12)
 
     def test_workers_1_is_sequential(self):
+        shutdown_pool()
         result = gwr(_lap_ln, np.array([1.0, 5.0]), 4, workers=1)
         assert isinstance(result, np.ndarray)
         assert len(result) == 2
+        assert _parallel._pool is None  # no pool was started
 
     def test_chunks_reassemble_in_order_bitwise(self):
         # 7 points over 3 workers: uneven interleaved chunks [0,3,6], [1,4], [2,5].
@@ -62,3 +64,11 @@ class TestParallel:
         shutdown_pool()
         assert _parallel._pool is None
         assert gwr(_lap_ln, [1.0, 5.0], 4, workers=2) == gwr(_lap_ln, [1.0, 5.0], 4)
+
+
+def test_interleaved_chunks_never_exceed_the_time_points():
+    from gwr_inversion._parallel import _interleaved_chunks
+    times = [float(value) for value in range(7)]
+    assert _interleaved_chunks(times, 3) == [[0.0, 3.0, 6.0], [1.0, 4.0], [2.0, 5.0]]
+    assert _interleaved_chunks([2.0], 4) == [[2.0]]
+    assert _interleaved_chunks([], 4) == []

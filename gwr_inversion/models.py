@@ -22,8 +22,9 @@ work with ``gwr(..., workers > 1)``.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union
+import math
+from dataclasses import dataclass, field
+from typing import Any, Callable, ClassVar, Dict, Iterable, List, Tuple, Union
 
 import numpy as np
 
@@ -31,6 +32,20 @@ from . import transforms
 from ._gwr import gwr
 
 RESERVOIR = "reservoir"
+
+
+def _require_in_range(
+    name: str, value: float, lower: float, upper: float, *,
+    lower_inclusive: bool = True, upper_inclusive: bool = True,
+) -> None:
+    """Raise ValueError unless ``value`` is finite and inside the documented range."""
+    above_lower = value >= lower if lower_inclusive else value > lower
+    below_upper = value <= upper if upper_inclusive else value < upper
+    if not (math.isfinite(value) and above_lower and below_upper):
+        lower_bracket = "[" if lower_inclusive else "("
+        upper_bracket = "]" if upper_inclusive and math.isfinite(upper) else ")"
+        raise ValueError(f"{name} must be finite and in {lower_bracket}{lower}, {upper}"
+                         f"{upper_bracket}, got {value!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -81,6 +96,8 @@ class BuiltinGeometry(Geometry):
         return {}
 
     def laplace_pressure(self, s: Any, s_eff_by_region: Dict[str, Any]) -> Any:
+        """``geometry_function`` at the reservoir's effective Laplace variable.
+        ``Model`` calls ``transforms.compose`` instead (same value, ARB fast path)."""
         return self.geometry_function()(
             s, s_eff_by_region[RESERVOIR], **self.geometry_parameters())
 
@@ -102,6 +119,11 @@ class RadialNoFlow(BuiltinGeometry):
 
     outer_radius: float = 1000.0
 
+    def __post_init__(self) -> None:
+        """Reject parameters outside the documented domain."""
+        _require_in_range("outer_radius", self.outer_radius, 1.0, math.inf,
+                          lower_inclusive=False)
+
     def geometry_function(self) -> Callable[..., Any]:
         return transforms.radial_bounded_nf
 
@@ -116,6 +138,11 @@ class RadialConstantPressure(BuiltinGeometry):
     """
 
     outer_radius: float = 1000.0
+
+    def __post_init__(self) -> None:
+        """Reject parameters outside the documented domain."""
+        _require_in_range("outer_radius", self.outer_radius, 1.0, math.inf,
+                          lower_inclusive=False)
 
     def geometry_function(self) -> Callable[..., Any]:
         return transforms.radial_bounded_cp
@@ -133,6 +160,10 @@ class LinearInfinite(BuiltinGeometry):
 
     distance: float = 0.0
 
+    def __post_init__(self) -> None:
+        """Reject parameters outside the documented domain."""
+        _require_in_range("distance", self.distance, 0.0, math.inf)
+
     def geometry_function(self) -> Callable[..., Any]:
         return transforms.linear_inf
 
@@ -148,6 +179,10 @@ class LinearNoFlow(BuiltinGeometry):
     """
 
     distance: float = 0.0
+
+    def __post_init__(self) -> None:
+        """Reject parameters outside the documented domain."""
+        _require_in_range("distance", self.distance, 0.0, 1.0)
 
     def geometry_function(self) -> Callable[..., Any]:
         return transforms.linear_bounded_nf
@@ -165,6 +200,10 @@ class LinearConstantPressure(BuiltinGeometry):
 
     distance: float = 0.0
 
+    def __post_init__(self) -> None:
+        """Reject parameters outside the documented domain."""
+        _require_in_range("distance", self.distance, 0.0, 1.0)
+
     def geometry_function(self) -> Callable[..., Any]:
         return transforms.linear_bounded_cp
 
@@ -181,6 +220,10 @@ class FractureInfinite(BuiltinGeometry):
     """
 
     fracture_position: float = 0.732
+
+    def __post_init__(self) -> None:
+        """Reject parameters outside the documented domain."""
+        _require_in_range("fracture_position", self.fracture_position, 0.0, 1.0)
 
     def geometry_function(self) -> Callable[..., Any]:
         return transforms.frac_inf
@@ -200,6 +243,12 @@ class FractureNoFlow(BuiltinGeometry):
     outer_radius: float = 100.0
     fracture_position: float = 0.732
 
+    def __post_init__(self) -> None:
+        """Reject parameters outside the documented domain."""
+        _require_in_range("outer_radius", self.outer_radius, 1.0, math.inf,
+                          lower_inclusive=False)
+        _require_in_range("fracture_position", self.fracture_position, 0.0, 1.0)
+
     def geometry_function(self) -> Callable[..., Any]:
         return transforms.frac_bounded_nf
 
@@ -215,6 +264,12 @@ class FractureConstantPressure(BuiltinGeometry):
 
     outer_radius: float = 100.0
     fracture_position: float = 0.732
+
+    def __post_init__(self) -> None:
+        """Reject parameters outside the documented domain."""
+        _require_in_range("outer_radius", self.outer_radius, 1.0, math.inf,
+                          lower_inclusive=False)
+        _require_in_range("fracture_position", self.fracture_position, 0.0, 1.0)
 
     def geometry_function(self) -> Callable[..., Any]:
         return transforms.frac_bounded_cp
@@ -241,7 +296,15 @@ class DualPorosity:
     region: str = RESERVOIR
     level: ClassVar[str] = "region"
 
+    def __post_init__(self) -> None:
+        """Reject parameters outside the documented domain."""
+        _require_in_range("interporosity_flow", self.interporosity_flow, 0.0, math.inf,
+                          lower_inclusive=False)
+        _require_in_range("storativity_ratio", self.storativity_ratio, 0.0, 1.0,
+                          lower_inclusive=False, upper_inclusive=False)
+
     def effective_s(self, s: Any) -> Any:
+        """The region's effective Laplace variable ``f(s) s``."""
         return transforms.apply_dual_porosity(s, self.interporosity_flow,
                                               self.storativity_ratio)
 
@@ -253,6 +316,10 @@ class Skin:
     skin: float
     level: ClassVar[str] = "wellbore"
 
+    def __post_init__(self) -> None:
+        """Reject a non-finite skin."""
+        _require_in_range("skin", self.skin, -math.inf, math.inf)
+
 
 @dataclass(frozen=True)
 class WellboreStorage:
@@ -260,6 +327,10 @@ class WellboreStorage:
 
     storage: float
     level: ClassVar[str] = "wellbore"
+
+    def __post_init__(self) -> None:
+        """Reject a storage coefficient that is not finite and > 0."""
+        _require_in_range("storage", self.storage, 0.0, math.inf, lower_inclusive=False)
 
 
 @dataclass(frozen=True)
@@ -276,9 +347,16 @@ class VariableWellboreStorage:
     change_rate: float
     level: ClassVar[str] = "wellbore"
 
+    def __post_init__(self) -> None:
+        """Reject a storage coefficient that is not finite and > 0, and non-finite
+        change parameters (their signs are not restricted here)."""
+        _require_in_range("storage", self.storage, 0.0, math.inf, lower_inclusive=False)
+        _require_in_range("storage_change_ratio", self.storage_change_ratio,
+                          -math.inf, math.inf)
+        _require_in_range("change_rate", self.change_rate, -math.inf, math.inf)
+
 
 Effect = Union[DualPorosity, Skin, WellboreStorage, VariableWellboreStorage]
-StorageEffect = Union[WellboreStorage, VariableWellboreStorage]
 
 
 def _validate(geometry: Any, effects: Tuple[Any, ...]) -> None:
@@ -301,8 +379,6 @@ def _validate(geometry: Any, effects: Tuple[Any, ...]) -> None:
         elif isinstance(effect, Skin):
             skin_count += 1
         elif isinstance(effect, (WellboreStorage, VariableWellboreStorage)):
-            if not effect.storage > 0:
-                raise ValueError(f"storage must be > 0, got {effect.storage!r}")
             storage_count += 1
         else:
             raise TypeError(f"unknown effect {effect!r}")
@@ -311,6 +387,17 @@ def _validate(geometry: Any, effects: Tuple[Any, ...]) -> None:
     if storage_count > 1:
         raise ValueError(
             "at most one wellbore storage effect (WellboreStorage or VariableWellboreStorage)")
+
+
+def _wellbore_effects(effects: Tuple[Effect, ...]) -> transforms.WellboreEffects:
+    """The skin and storage effects of a validated model as one bundle."""
+    skin = next((effect.skin for effect in effects if isinstance(effect, Skin)), 0.0)
+    storage = next((effect for effect in effects
+                    if isinstance(effect, (WellboreStorage, VariableWellboreStorage))), None)
+    if isinstance(storage, VariableWellboreStorage):
+        return transforms.WellboreEffects(
+            skin, storage.storage, storage.storage_change_ratio, storage.change_rate)
+    return transforms.WellboreEffects(skin, 0.0 if storage is None else storage.storage)
 
 
 # ---------------------------------------------------------------------------
@@ -324,69 +411,56 @@ class Model:
 
     geometry: Geometry
     effects: Tuple[Effect, ...]
+    # Derived once from ``effects`` (the model is frozen); laplace_pressure runs
+    # millions of times per inversion.
+    dual_porosity_by_region: Dict[str, DualPorosity] = field(
+        init=False, repr=False, compare=False)
+    wellbore: transforms.WellboreEffects = field(init=False, repr=False, compare=False)
+    # True for an unmodified built-in geometry: one transforms.compose call gives
+    # the same value as the generic path, plus the ARB fast path. A subclass that
+    # adds regions or overrides laplace_pressure takes the generic path.
+    uses_compose: bool = field(init=False, repr=False, compare=False)
 
     def __init__(self, geometry: Geometry, *effects: Effect) -> None:
         _validate(geometry, effects)
         object.__setattr__(self, "geometry", geometry)
         object.__setattr__(self, "effects", tuple(effects))
-
-    def _dual_porosity_by_region(self) -> Dict[str, DualPorosity]:
-        return {effect.region: effect for effect in self.effects
-                if isinstance(effect, DualPorosity)}
-
-    def _skin(self) -> Optional[Skin]:
-        for effect in self.effects:
-            if isinstance(effect, Skin):
-                return effect
-        return None
-
-    def _storage(self) -> Optional[StorageEffect]:
-        for effect in self.effects:
-            if isinstance(effect, (WellboreStorage, VariableWellboreStorage)):
-                return effect
-        return None
+        object.__setattr__(self, "dual_porosity_by_region", {
+            effect.region: effect for effect in effects if isinstance(effect, DualPorosity)})
+        object.__setattr__(self, "wellbore", _wellbore_effects(effects))
+        object.__setattr__(self, "uses_compose", (
+            isinstance(geometry, BuiltinGeometry)
+            and type(geometry).laplace_pressure is BuiltinGeometry.laplace_pressure
+            and geometry.regions == (RESERVOIR,)))
 
     def laplace_pressure(self, s: Any) -> Any:
         """
         Dimensionless wellbore pressure ``pwd(s)`` in Laplace space.
 
-        Built-in geometries go through one ``transforms.lap_transform`` call
-        (same result, and the ARB fast path for radial_inf and the linear
+        Unmodified built-in geometries go through one ``transforms.compose``
+        call (same result, and the ARB fast path for radial_inf and the linear
         geometries). Other geometries use the generic path: region effects,
         ``geometry.laplace_pressure``, skin, then storage.
         """
-        dual_porosity_by_region = self._dual_porosity_by_region()
-        skin = self._skin()
-        storage = self._storage()
-        if isinstance(self.geometry, BuiltinGeometry):
-            dual_porosity = dual_porosity_by_region.get(RESERVOIR)
-            variable_storage = storage if isinstance(storage, VariableWellboreStorage) else None
-            return transforms.lap_transform(
+        if self.uses_compose:
+            assert isinstance(self.geometry, BuiltinGeometry)
+            dual_porosity = self.dual_porosity_by_region.get(RESERVOIR)
+            return transforms.compose(
                 s,
                 self.geometry.geometry_function(),
-                cD=0.0 if storage is None else storage.storage,
-                cDd=None if variable_storage is None else variable_storage.storage_change_ratio,
-                aD=None if variable_storage is None else variable_storage.change_rate,
-                lam=None if dual_porosity is None else dual_porosity.interporosity_flow,
-                omega=None if dual_porosity is None else dual_porosity.storativity_ratio,
-                skin=0.0 if skin is None else skin.skin,
-                **self.geometry.geometry_parameters(),
+                self.wellbore,
+                None if dual_porosity is None else dual_porosity.interporosity_flow,
+                None if dual_porosity is None else dual_porosity.storativity_ratio,
+                self.geometry.geometry_parameters(),
             )
 
         s_eff_by_region = {
-            region: (dual_porosity_by_region[region].effective_s(s)
-                     if region in dual_porosity_by_region else s)
+            region: (self.dual_porosity_by_region[region].effective_s(s)
+                     if region in self.dual_porosity_by_region else s)
             for region in self.geometry.regions
         }
         pressure = self.geometry.laplace_pressure(s, s_eff_by_region)
-        if skin is not None:
-            pressure = transforms.apply_skin(pressure, s, skin.skin)
-        if isinstance(storage, VariableWellboreStorage):
-            pressure = transforms.apply_variable_wbs(
-                pressure, s, storage.storage, storage.storage_change_ratio, storage.change_rate)
-        elif storage is not None:
-            pressure = transforms.apply_wbs(pressure, s, storage.storage)
-        return pressure
+        return self.wellbore.apply(pressure, s)
 
     def laplace(self, output: str = "pressure") -> LaplaceFunction:
         """The Laplace-domain function for ``output`` (one of ``OUTPUTS``),
@@ -413,24 +487,27 @@ class Model:
             raise ValueError(
                 "derivative() supports dtype='float' only; for mpf output use "
                 "gwr(model.laplace('derivative'), ...) and multiply by t")
+        if isinstance(time, Iterable) and not isinstance(time, np.ndarray):
+            time = list(time)  # read twice: by gwr and by the multiplication below
         values = gwr(self.laplace("derivative"), time, M, **gwr_options)
-        if isinstance(time, np.ndarray):
-            return time.astype(np.float64) * values
-        if isinstance(time, (list, tuple)):
+        if isinstance(values, np.ndarray):
+            # gwr drops length-1 axes and returns 0-d input as shape (1,); so does ravel
+            return np.ravel(np.asarray(time, dtype=np.float64)) * values
+        if isinstance(values, list):
             return [float(time_value) * value for time_value, value in zip(time, values)]
         return float(time) * values
 
     def hybrid_rate(
-        self, time: Any, b: float = 0.5, M: int = 32, **gwr_options: Any,
+        self, time: Any, M: int = 32, *, b: float = 0.5, **gwr_options: Any,
     ) -> Tuple["np.ndarray[Any, Any]", "np.ndarray[Any, Any]", "np.ndarray[Any, Any]",
                "np.ndarray[Any, Any]", "np.ndarray[Any, Any]"]:
         """``transforms.hybrid_rate`` applied to this model's rate on ``time``."""
-        times = np.asarray(time, dtype=np.float64)
+        if isinstance(time, Iterable) and not isinstance(time, np.ndarray):
+            time = list(time)
+        times = np.ravel(np.asarray(time, dtype=np.float64))  # as gwr drops length-1 axes
         rate = np.asarray(self.rate(times, M, **gwr_options), dtype=np.float64)
         return transforms.hybrid_rate(rate, times, b=b)
 
-
-OUTPUTS: Tuple[str, ...] = ("pressure", "rate", "derivative", "cumulative")
 
 _OUTPUT_TRANSFORMS: Dict[str, Callable[[Any, Any], Any]] = {
     "pressure": transforms.output_pressure,
@@ -438,6 +515,8 @@ _OUTPUT_TRANSFORMS: Dict[str, Callable[[Any, Any], Any]] = {
     "derivative": transforms.output_derivative,
     "cumulative": transforms.output_cumulative,
 }
+
+OUTPUTS: Tuple[str, ...] = tuple(_OUTPUT_TRANSFORMS)
 
 
 @dataclass(frozen=True)
@@ -448,5 +527,11 @@ class LaplaceFunction:
     model: Model
     output: str
 
+    def __post_init__(self) -> None:
+        """Reject an unknown output here, not at the first evaluation in a worker."""
+        if self.output not in _OUTPUT_TRANSFORMS:
+            raise ValueError(f"output must be one of {OUTPUTS}, got {self.output!r}")
+
     def __call__(self, s: Any) -> Any:
+        """The output's Laplace-domain value at ``s``."""
         return _OUTPUT_TRANSFORMS[self.output](self.model.laplace_pressure(s), s)

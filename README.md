@@ -21,7 +21,8 @@ results if they are used.
 pip install gwr_inversion                # base install
 pip install gwr_inversion[fast]          # + gmpy2: faster GWR internals
 pip install gwr_inversion[flint]         # + python-flint: fast Bessel functions
-pip install gwr_inversion[all]           # both (maximum speed)
+pip install gwr_inversion[hybrid]        # + scipy: hybrid_rate / Model.hybrid_rate
+pip install gwr_inversion[all]           # all three (maximum speed)
 ```
 
 The two optional dependencies accelerate different parts of the computation and
@@ -43,8 +44,8 @@ Measured with `test/benchmark.py` on 2026-10-19 (31 time points, tD = 1e1 to
 with other load present, so single entries vary by up to about 50% between
 runs. Seconds per curve. `mpmath` and `gmpy2` run the library as if
 python-flint and the gmpy2 Bessel code were absent; `all` = gmpy2 +
-python-flint. Results agree with pure mpmath to <= 2.3e-8 at M=8 and
-<= 1.8e-16 at M=32.
+python-flint. Results agree with pure mpmath to <= 2.4e-8 at M=8 and
+<= 2e-16 at M=32.
 
 ```
                                          M=8                    M=32
@@ -74,9 +75,11 @@ model = Model(RadialNoFlow(outer_radius=1000.0),
               DualPorosity(interporosity_flow=1e-6, storativity_ratio=0.1),
               Skin(3.0), WellboreStorage(100.0))
 time = 10 ** np.linspace(1, 7, 61)
-pressure = model.pressure(time, M=16)
-derivative = model.derivative(time, M=16)          # t dp/dt
-rate = model.rate(time, M=16, workers=4)
+
+if __name__ == "__main__":  # required for workers > 1 on Windows and macOS (spawn)
+    pressure = model.pressure(time, M=16)
+    derivative = model.derivative(time, M=16)          # t dp/dt
+    rate = model.rate(time, M=16, workers=4)
 ```
 
 Geometries: `RadialInfinite`, `RadialNoFlow`, `RadialConstantPressure`, `LinearInfinite`,
@@ -126,7 +129,7 @@ def lap_log_fn(s: float):
     return -mp.log(s) / s - 0.577216 / s
 
 gwr(lap_log_fn, time=5.0, M=32)
-# mpf('1.6094375773356333')
+# 1.6094375773356333  (float; dtype="mpf" returns mp.mpf)
 
 math.log(5.0)
 # 1.6094379124341003
@@ -136,8 +139,8 @@ math.log(5.0)
 
 ### gmpy2 backend — transparent, no code changes
 
-The gmpy2 backend accelerates GWR's internal arithmetic (factorial, binomial,
-log2) using MPFR. It is selected automatically when installed and requires no
+The gmpy2 backend runs GWR's internal arithmetic (the Gaver sums and the
+Wynn-rho recursion) in MPFR. It is selected automatically when installed and requires no
 changes to user code:
 
 ```python
@@ -175,7 +178,7 @@ result = gwr(lap_rad_fast, time, M=32)
 
 ```python
 # Force a specific backend (overrides auto-select):
-gwr(fn, time, backend="mpmath")   # pure mpmath
+gwr(fn, time, backend="mpmath")   # mpmath GWR arithmetic (Bessel calls in fn still use ARB/gmpy2)
 gwr(fn, time, backend="gmpy2")    # require gmpy2 (raises ImportError if absent)
 gwr(fn, time, backend="auto")     # default: use gmpy2 if installed
 ```

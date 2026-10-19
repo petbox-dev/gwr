@@ -6,7 +6,7 @@ Provides mpmath ops by default; uses gmpy2.mpfr when available for ~10x speedup.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Any, Callable, Dict, Generator, Tuple
+from typing import Any, Callable, Dict, Generator
 
 from mpmath import mp
 
@@ -73,16 +73,12 @@ def gm_mpf(val: Any, precin: int) -> Any:
 
 
 def gm_to_mpf(val: Any, precin: int) -> Any:
-    """Convert gmpy2 mpfr to mpmath mpf for public API consistency."""
-    dps = mp.dps
-    mp.dps = precin
+    """Convert gmpy2 mpfr to mpmath mpf, rounded to the current mp.prec (the GWR
+    callers run at ``mp.dps == precin``)."""
     if gmpy2.is_finite(val):
         mantissa, exponent = val.as_mantissa_exp()
-        result = mp.mpf((int(mantissa), int(exponent)))
-    else:
-        result = mp.mpf(str(val))  # inf and nan carry no mantissa
-    mp.dps = dps
-    return result
+        return mp.mpf((int(mantissa), int(exponent)))
+    return mp.mpf(str(val))  # inf and nan carry no mantissa
 
 
 def gm_from_mpf(val: Any, precin: int) -> Any:
@@ -121,7 +117,6 @@ BACKENDS: Dict[str, OpsDict] = {
 }
 
 
-def get_ops(backend_name: str) -> Tuple[OpsDict, str]:
-    """Return the ops dict and resolved backend name."""
-    name = get_backend(backend_name)
-    return BACKENDS[name], name
+def get_ops(backend_name: str) -> OpsDict:
+    """Return the ops dict of the resolved backend."""
+    return BACKENDS[get_backend(backend_name)]

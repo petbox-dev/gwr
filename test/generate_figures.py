@@ -31,6 +31,8 @@ from gwr_inversion import (
     linear_bounded_cp,
     linear_bounded_nf,
     linear_inf,
+    output_derivative,
+    output_rate,
     radial_bounded_cp,
     radial_bounded_nf,
     radial_inf,
@@ -141,17 +143,28 @@ def _pressure(geometry_fn: Callable, time: np.ndarray, M: int, **kwargs: Any) ->
 
 def _derivative(geometry_fn: Callable, time: np.ndarray, M: int, **kwargs: Any) -> np.ndarray:
     """Compute Bourdet derivative (t * dpD/dt) via GWR."""
-    return time * gwr(lambda s: s * lap_transform(s, geometry_fn, **kwargs), time, M, refine=REFINE)
+    return time * gwr(lambda s: output_derivative(lap_transform(s, geometry_fn, **kwargs), s),
+                      time, M, refine=REFINE)
 
 
 def _rate(geometry_fn: Callable, time: np.ndarray, M: int, **kwargs: Any) -> np.ndarray:
     """Compute dimensionless rate via GWR."""
-    return gwr(lambda s: 1 / (s**2 * lap_transform(s, geometry_fn, **kwargs)), time, M, refine=REFINE)
+    return gwr(lambda s: output_rate(lap_transform(s, geometry_fn, **kwargs), s),
+               time, M, refine=REFINE)
 
 
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
+
+
+def _status(relative_error: float) -> str:
+    """OK below 1e-6, CHECK below 1e-3, else WARN; NaN (a failed evaluation) is WARN."""
+    if relative_error < 1e-6:
+        return "OK"
+    if relative_error < 1e-3:
+        return "CHECK"
+    return "WARN"
 
 
 def validate_case(
@@ -168,8 +181,9 @@ def validate_case(
     when the solution passes through zero (e.g., rate in bounded systems
     at late time).
     """
-    r_low = gwr(fn, time, M_low)
-    r_high = gwr(fn, time, M_high)
+    # refine=REFINE: validate the same pipeline the figures plot.
+    r_low = gwr(fn, time, M_low, refine=REFINE)
+    r_high = gwr(fn, time, M_high, refine=REFINE)
 
     # Scale-aware error: use fraction of peak magnitude as absolute tolerance
     # so near-zero values (e.g., rate crossing zero in bounded systems) don't
@@ -179,7 +193,7 @@ def validate_case(
     denom = np.maximum(np.abs(r_high), atol)
     rel_err = float(np.max(np.abs(r_low - r_high) / denom))
 
-    status = "OK" if rel_err < 1e-6 else "CHECK" if rel_err < 1e-3 else "WARN"
+    status = _status(rel_err)
     print(f"  [{status}] {label:<55} max_rel_err = {rel_err:.2e}")
     return rel_err
 
@@ -195,7 +209,7 @@ def run_all_validation() -> Dict[str, float]:
     print("\nRadial geometry:")
     cases: List[Tuple[str, Callable, np.ndarray]] = [
         ("radial_inf pressure", lambda s: lap_transform(s, radial_inf), RADIAL_TIME),
-        ("radial_inf rate", lambda s: 1 / (s**2 * lap_transform(s, radial_inf)), RADIAL_TIME),
+        ("radial_inf rate", lambda s: output_rate(lap_transform(s, radial_inf), s), RADIAL_TIME),
         (
             "radial_bounded_nf pressure",
             lambda s: lap_transform(s, radial_bounded_nf, reD=RADIAL_RED),
@@ -203,7 +217,7 @@ def run_all_validation() -> Dict[str, float]:
         ),
         (
             "radial_bounded_nf rate",
-            lambda s: 1 / (s**2 * lap_transform(s, radial_bounded_nf, reD=RADIAL_RED)),
+            lambda s: output_rate(lap_transform(s, radial_bounded_nf, reD=RADIAL_RED), s),
             RADIAL_TIME,
         ),
         (
@@ -213,7 +227,7 @@ def run_all_validation() -> Dict[str, float]:
         ),
         (
             "radial_bounded_cp rate",
-            lambda s: 1 / (s**2 * lap_transform(s, radial_bounded_cp, reD=RADIAL_RED)),
+            lambda s: output_rate(lap_transform(s, radial_bounded_cp, reD=RADIAL_RED), s),
             RADIAL_TIME,
         ),
     ]
@@ -226,7 +240,7 @@ def run_all_validation() -> Dict[str, float]:
         ("linear_inf pressure", lambda s: lap_transform(s, linear_inf, xD=0.0), LINEAR_TIME),
         (
             "linear_inf rate",
-            lambda s: 1 / (s**2 * lap_transform(s, linear_inf, xD=0.0)),
+            lambda s: output_rate(lap_transform(s, linear_inf, xD=0.0), s),
             LINEAR_TIME,
         ),
         (
@@ -236,7 +250,7 @@ def run_all_validation() -> Dict[str, float]:
         ),
         (
             "linear_bounded_nf rate",
-            lambda s: 1 / (s**2 * lap_transform(s, linear_bounded_nf, xD=0.0)),
+            lambda s: output_rate(lap_transform(s, linear_bounded_nf, xD=0.0), s),
             LINEAR_TIME,
         ),
         (
@@ -246,7 +260,7 @@ def run_all_validation() -> Dict[str, float]:
         ),
         (
             "linear_bounded_cp rate",
-            lambda s: 1 / (s**2 * lap_transform(s, linear_bounded_cp, xD=0.0)),
+            lambda s: output_rate(lap_transform(s, linear_bounded_cp, xD=0.0), s),
             LINEAR_TIME,
         ),
     ]
@@ -257,7 +271,7 @@ def run_all_validation() -> Dict[str, float]:
     print("\nFractured geometry:")
     cases = [
         ("frac_inf pressure", lambda s: lap_transform(s, frac_inf), FRAC_TIME),
-        ("frac_inf rate", lambda s: 1 / (s**2 * lap_transform(s, frac_inf)), FRAC_TIME),
+        ("frac_inf rate", lambda s: output_rate(lap_transform(s, frac_inf), s), FRAC_TIME),
         (
             "frac_bounded_nf pressure",
             lambda s: lap_transform(s, frac_bounded_nf, reD=FRAC_RED),
@@ -265,7 +279,7 @@ def run_all_validation() -> Dict[str, float]:
         ),
         (
             "frac_bounded_nf rate",
-            lambda s: 1 / (s**2 * lap_transform(s, frac_bounded_nf, reD=FRAC_RED)),
+            lambda s: output_rate(lap_transform(s, frac_bounded_nf, reD=FRAC_RED), s),
             FRAC_TIME,
         ),
         (
@@ -275,7 +289,7 @@ def run_all_validation() -> Dict[str, float]:
         ),
         (
             "frac_bounded_cp rate",
-            lambda s: 1 / (s**2 * lap_transform(s, frac_bounded_cp, reD=FRAC_RED)),
+            lambda s: output_rate(lap_transform(s, frac_bounded_cp, reD=FRAC_RED), s),
             FRAC_TIME,
         ),
     ]
@@ -303,10 +317,12 @@ def run_all_validation() -> Dict[str, float]:
 
     # Summary
     print(f"\n{'-' * 78}")
-    worst = max(results.values())
-    n_warn = sum(1 for v in results.values() if v >= 1e-3)
-    n_check = sum(1 for v in results.values() if 1e-6 <= v < 1e-3)
-    print(f"  {len(results)} cases validated. Worst: {worst:.2e}. WARN: {n_warn}, CHECK: {n_check}")
+    statuses = [_status(value) for value in results.values()]
+    worst = float(np.nanmax(list(results.values())))
+    warning_count = statuses.count("WARN")
+    check_count = statuses.count("CHECK")
+    print(f"  {len(results)} cases validated. Worst finite: {worst:.2e}. "
+          f"WARN: {warning_count}, CHECK: {check_count}")
     print(f"{'-' * 78}\n")
 
     return results
@@ -560,16 +576,20 @@ def _hybrid_figure(
 # ---------------------------------------------------------------------------
 
 
-def main(skip_validation: bool = False) -> None:
+def main(skip_validation: bool = False) -> int:
+    """Run the validation (unless skipped) and write the figures; 1 if any case is WARN."""
     mp.dps = DPS
     M = 8
+    exit_code = 0
 
     OUTDIR.mkdir(parents=True, exist_ok=True)
 
     # --- Validation ---
     if not skip_validation:
         t0 = timer.perf_counter()
-        run_all_validation()
+        validation_results = run_all_validation()
+        if any(_status(value) == "WARN" for value in validation_results.values()):
+            exit_code = 1
         print(f"Validation completed in {timer.perf_counter() - t0:.1f}s\n")
 
     # --- Figures ---
@@ -666,6 +686,7 @@ def main(skip_validation: bool = False) -> None:
     print(f"    {timer.perf_counter() - t0:.1f}s")
 
     print("\nDone.")
+    return exit_code
 
 
 if __name__ == "__main__":
@@ -676,4 +697,4 @@ if __name__ == "__main__":
         "--skip-validation", action="store_true", help="Skip M=8 vs M=16 validation (faster)"
     )
     args = parser.parse_args()
-    main(skip_validation=args.skip_validation)
+    raise SystemExit(main(skip_validation=args.skip_validation))

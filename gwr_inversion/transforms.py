@@ -24,14 +24,30 @@ from mpmath import mp
 
 from . import _arb_transforms, _flint
 from ._bessel import (
-    besselk as _besselk, besseli as _besseli,
-    besselk0_integral as _besselk0_integral, besseli0_integral as _besseli0_integral,
     bessel_k_over_i as _bessel_k_over_i,
+    besseli as _besseli,
+    besseli0_integral as _besseli0_integral,
+    besselk as _besselk,
+    besselk0_integral as _besselk0_integral,
+)
+from ._modifiers import (  # noqa: F401  (physics modifiers, re-exported)
+    WellboreEffects,
+    apply_dual_porosity,
+    apply_skin,
+    apply_variable_wbs,
+    apply_wbs,
+    effective_s,
 )
 
 
 def _log2(value: Any) -> float:
-    """Upper bound on log2 of a non-negative mpf (mpmath's ``mag``); -inf for zero."""
+    """Upper bound on log2 of a non-negative mpf (mpmath's ``mag``); -inf for zero.
+
+    NaN maps to +inf ("cannot bound it, keep every bit"), never to -inf, which
+    would mark the boundary term negligible.
+    """
+    if mp.isnan(value):
+        return float("inf")
     return float(mp.mag(value)) if value > 0 else float("-inf")
 
 
@@ -338,12 +354,12 @@ def frac_inf(s: Any, s_eff: Any, xD: float = 0.732) -> Any:
             Dimensionless pressure in Laplace space.
     """
     sqrt_s = mp.sqrt(s_eff)
-    c_ = 1 / (2 * s * sqrt_s)
+    line_source_prefactor = 1 / (2 * s * sqrt_s)
 
     k0_int_1 = _besselk0_integral(sqrt_s * (1 - xD))
     k0_int_2 = _besselk0_integral(sqrt_s * (1 + xD))
 
-    return c_ * (k0_int_1 + k0_int_2)
+    return line_source_prefactor * (k0_int_1 + k0_int_2)
 
 
 def frac_bounded_nf(s: Any, s_eff: Any, reD: float = 100.0,
@@ -394,7 +410,7 @@ def frac_bounded_nf(s: Any, s_eff: Any, reD: float = 100.0,
             Dimensionless pressure in Laplace space.
     """
     sqrt_s = mp.sqrt(s_eff)
-    c_ = 1 / (2 * s * sqrt_s)
+    line_source_prefactor = 1 / (2 * s * sqrt_s)
 
     # Infinite-acting component
     k0_int_1 = _besselk0_integral(sqrt_s * (1 - xD))
@@ -409,7 +425,7 @@ def frac_bounded_nf(s: Any, s_eff: Any, reD: float = 100.0,
         return _log2(ratio * i0_int_sum / abs(inf_part + ratio * i0_int_sum))
 
     ratio = _bessel_k_over_i(1, sqrt_s * reD, log2_sensitivity)
-    return c_ * (inf_part + ratio * i0_int_sum)
+    return line_source_prefactor * (inf_part + ratio * i0_int_sum)
 
 
 def frac_bounded_cp(s: Any, s_eff: Any, reD: float = 100.0,
@@ -456,7 +472,7 @@ def frac_bounded_cp(s: Any, s_eff: Any, reD: float = 100.0,
             Dimensionless pressure in Laplace space.
     """
     sqrt_s = mp.sqrt(s_eff)
-    c_ = 1 / (2 * s * sqrt_s)
+    line_source_prefactor = 1 / (2 * s * sqrt_s)
 
     # Infinite-acting component
     k0_int_1 = _besselk0_integral(sqrt_s * (1 - xD))
@@ -471,165 +487,7 @@ def frac_bounded_cp(s: Any, s_eff: Any, reD: float = 100.0,
         return _log2(ratio * i0_int_sum / abs(inf_part - ratio * i0_int_sum))
 
     ratio = _bessel_k_over_i(0, sqrt_s * reD, log2_sensitivity)
-    return c_ * (inf_part - ratio * i0_int_sum)
-
-
-# ============================================================================
-# Physics Modifiers
-# ============================================================================
-
-
-def apply_dual_porosity(s: Any, lam: float, omega: float) -> Any:
-    """
-    Naturally fractured (dual-porosity) interporosity flow modifier.
-
-    Computes the effective Laplace variable ``s_eff = f(s) * s`` for a
-    naturally fractured reservoir using the Warren and Root (1963)
-    pseudo-steady-state interporosity flow model.
-
-    Warren, J. E. and Root, P. J. 1963. The Behavior of Naturally Fractured
-    Reservoirs. SPE Journal, 3 (3): 245–255. SPE-426-PA.
-    https://doi.org/10.2118/426-PA.
-
-    .. math::
-
-        f(s) = \\frac{\\lambda + \\omega (1 - \\omega) s}{\\lambda + (1 - \\omega) s}
-
-    .. math::
-
-        s_\\mathrm{eff} = f(s) \\cdot s
-
-    Parameters
-    ----------
-        s : mpf
-            Laplace variable.
-
-        lam : float
-            Interporosity flow coefficient :math:`\\lambda`, characterizing
-            matrix-to-fracture flow. Dimensionless, typically ``1e-9`` to
-            ``1e-3``.
-
-        omega : float
-            Storativity ratio :math:`\\omega`, the fraction of total storage
-            in the fracture system. Dimensionless, ``0 < omega < 1``.
-
-    Returns
-    -------
-        mpf
-            Effective Laplace variable ``s_eff``.
-    """
-    fs = (lam + omega * (1 - omega) * s) / (lam + (1 - omega) * s)
-    return fs * s
-
-
-def apply_skin(psd: Any, s: Any, skin: float) -> Any:
-    """
-    Apply skin effect to a dimensionless pressure solution.
-
-    .. math::
-
-        \\bar{p}_{wD} = \\bar{p}_D + \\frac{S}{s}
-
-    Parameters
-    ----------
-        psd : mpf
-            Dimensionless pressure in Laplace space (before skin).
-
-        s : mpf
-            Laplace variable.
-
-        skin : float
-            Skin factor ``S``. Dimensionless. Positive for damage,
-            negative for stimulation.
-
-    Returns
-    -------
-        mpf
-            Dimensionless wellbore pressure in Laplace space.
-    """
-    return psd + skin / s
-
-
-def apply_wbs(psd: Any, s: Any, cD: float) -> Any:
-    """
-    Apply wellbore storage to a dimensionless pressure solution.
-
-    van Everdingen, A. F. and Hurst, W. 1949. The Application of the
-    Laplace Transformation to Flow Problems in Reservoirs. Journal of
-    Petroleum Technology, 1 (12): 305–324. SPE-949305-G.
-    https://doi.org/10.2118/949305-G.
-
-    .. math::
-
-        \\bar{p}_{wD} = \\frac{1}{\\frac{1}{\\bar{p}_D} + s^2 C_D}
-
-    Parameters
-    ----------
-        psd : mpf
-            Dimensionless pressure in Laplace space (before WBS).
-
-        s : mpf
-            Laplace variable.
-
-        cD : float
-            Dimensionless wellbore storage coefficient ``C_D``.
-            Must be >= 0.
-
-    Returns
-    -------
-        mpf
-            Dimensionless wellbore pressure in Laplace space.
-    """
-    return 1 / (1 / psd + s ** 2 * cD)
-
-
-def apply_variable_wbs(psd: Any, s: Any, cD: float, cDd: float,
-                       aD: float) -> Any:
-    """
-    Apply variable wellbore storage to a dimensionless pressure solution.
-
-    Models a changing wellbore storage coefficient (e.g., phase segregation,
-    changing compressibility).
-
-    Hegeman, P. S., Hallford, D. L., and Joseph, J. A. 1993.
-    Well-Test Analysis With Changing Wellbore Storage. SPE Formation
-    Evaluation, 8 (3): 201–207. SPE-21829-PA.
-    https://doi.org/10.2118/21829-PA.
-
-    .. math::
-
-        W(s) = 1 + s^2 C_D C_{Dd} \\left( \\frac{1}{s} - \\frac{1}{s + 1/a_D} \\right)
-
-    .. math::
-
-        \\bar{p}_{wD} = \\frac{W(s)}{\\frac{1}{\\bar{p}_D} + s^2 C_D}
-
-    Parameters
-    ----------
-        psd : mpf
-            Dimensionless pressure in Laplace space (before WBS).
-
-        s : mpf
-            Laplace variable.
-
-        cD : float
-            Dimensionless wellbore storage coefficient ``C_D``.
-
-        cDd : float
-            Dimensionless wellbore storage change ratio ``C_{Dd}``,
-            defined as ``(C_Ds - C_DL) / C_DL``.
-
-        aD : float
-            Dimensionless wellbore storage change rate ``a_D``,
-            controlling the transition speed.
-
-    Returns
-    -------
-        mpf
-            Dimensionless wellbore pressure in Laplace space.
-    """
-    wbs = 1 + s ** 2 * cD * cDd * (1 / s - 1 / (s + 1 / aD))
-    return wbs / (1 / psd + s ** 2 * cD)
+    return line_source_prefactor * (inf_part - ratio * i0_int_sum)
 
 
 # ============================================================================
@@ -693,11 +551,13 @@ def output_rate(pwd: Any, s: Any) -> Any:
 
 def output_cumulative(pwd: Any, s: Any) -> Any:
     """
-    Dimensionless cumulative production in Laplace space.
+    Time integral of the dimensionless wellbore pressure, in Laplace space
+    (for constant-pressure cumulative production, apply the same division by
+    ``s`` to the rate).
 
     .. math::
 
-        \\bar{N}_{pD} = \\frac{\\bar{p}_{wD}}{s}
+        \\mathcal{L}\\left[\\int_0^t p_{wD} \\, d\\tau\\right] = \\frac{\\bar{p}_{wD}}{s}
 
     Parameters
     ----------
@@ -710,19 +570,19 @@ def output_cumulative(pwd: Any, s: Any) -> Any:
     Returns
     -------
         mpf
-            Dimensionless cumulative production in Laplace space.
+            Laplace transform of the time integral of ``p_wD``.
     """
     return pwd / s
 
 
 def output_derivative(pwd: Any, s: Any) -> Any:
     """
-    Bourdet pressure derivative in Laplace space.
+    Laplace transform of ``dp_wD/dt``, from which the Bourdet derivative follows.
 
-    The Laplace-domain multiplication by ``s`` corresponds to
-    multiplication by ``t`` and differentiation in the time domain,
-    yielding the Bourdet derivative :math:`t \\, dp_{wD}/dt` after
-    inversion.
+    Multiplication by ``s`` in the Laplace domain is differentiation in
+    time (``p_wD(0) = 0``), so the inverse is :math:`dp_{wD}/dt`; multiplying
+    it by ``t`` after inversion gives the Bourdet derivative
+    :math:`t \\, dp_{wD}/dt`.
 
     Bourdet, D., Whittle, T. M., Douglas, A. A., and Pirard, Y. M. 1983.
     A New Set of Type Curves Simplifies Well Test Analysis. World Oil,
@@ -743,7 +603,7 @@ def output_derivative(pwd: Any, s: Any) -> Any:
     Returns
     -------
         mpf
-            Bourdet derivative in Laplace space. Multiply by ``t``
+            ``s p_wD``, the transform of ``dp_wD/dt``. Multiply by ``t``
             after inversion to obtain the time-domain derivative.
     """
     return s * pwd
@@ -754,16 +614,14 @@ def output_derivative(pwd: Any, s: Any) -> Any:
 # ============================================================================
 
 
-# Ball-arithmetic versions of the geometries where they measured faster
-# (python-flint only); see _arb_transforms for why the others are not here.
-_ARB_GEOMETRIES: Dict[Callable[..., Any], Callable[..., Any]] = {}
-if _flint.HAS_FLINT:
-    _ARB_GEOMETRIES = {
-        radial_inf: _arb_transforms.radial_inf,
-        linear_inf: _arb_transforms.linear_inf,
-        linear_bounded_nf: _arb_transforms.linear_bounded_nf,
-        linear_bounded_cp: _arb_transforms.linear_bounded_cp,
-    }
+# Ball-arithmetic versions of the geometries where they measured faster; used
+# only while ``_flint.HAS_FLINT``. See _arb_transforms for why the others are not here.
+_ARB_GEOMETRIES: Dict[Callable[..., Any], Callable[..., Any]] = {
+    radial_inf: _arb_transforms.radial_inf,
+    linear_inf: _arb_transforms.linear_inf,
+    linear_bounded_nf: _arb_transforms.linear_bounded_nf,
+    linear_bounded_cp: _arb_transforms.linear_bounded_cp,
+}
 
 
 def lap_transform(
@@ -840,7 +698,6 @@ def lap_transform(
     --------
     Infinite-acting radial flow with wellbore storage::
 
-        >>> from functools import partial
         >>> pwd = lambda s: lap_transform(s, radial_inf, cD=1e3)
 
     Naturally fractured, bounded radial flow::
@@ -854,38 +711,44 @@ def lap_transform(
         >>> pwd_fn = lambda s: lap_transform(s, linear_bounded_nf, xD=0.0)
         >>> qD = gwr(lambda s: 1 / (s**2 * pwd_fn(s)), time, M=8)
     """
+    if (lam is None) != (omega is None):
+        raise ValueError("dual porosity needs both lam and omega")
+    if lam is not None and omega is not None and not (lam > 0 and 0 < omega < 1):
+        raise ValueError(f"dual porosity needs lam > 0 and 0 < omega < 1, got {lam!r}, {omega!r}")
+    if (cDd is None) != (aD is None):
+        raise ValueError("variable wellbore storage needs both cDd and aD")
+    if cDd is not None and not cD > 0:
+        raise ValueError(f"variable wellbore storage needs cD > 0, got {cD!r}")
+    if not cD >= 0:  # also rejects NaN, which would otherwise read as "no storage"
+        raise ValueError(f"cD must be >= 0, got {cD!r}")
+    return compose(s, geometry_fn, WellboreEffects(skin, cD, cDd, aD), lam, omega, geom_kwargs)
+
+
+def compose(
+    s: Any,
+    geometry_fn: Callable[..., Any],
+    wellbore: WellboreEffects,
+    lam: Optional[float],
+    omega: Optional[float],
+    geometry_parameters: Dict[str, Any],
+) -> Any:
+    """
+    ``lap_transform`` with the wellbore effects bundled and the geometry
+    parameters as a dict; ``models.Model`` builds the bundle once per model.
+    """
     # radial_inf and the linear geometries run in ARB ball arithmetic when
     # python-flint is installed (same quantity); others use the mpf code.
-    arb_geometry = _ARB_GEOMETRIES.get(geometry_fn)
-    if arb_geometry is not None:
-        result = _arb_transforms.lap_transform(
-            s, arb_geometry, cD, cDd, aD, lam, omega, skin, geom_kwargs)
-        if result is not None:
-            return result
+    if _flint.HAS_FLINT:
+        ball_geometry = _ARB_GEOMETRIES.get(geometry_fn)
+        if ball_geometry is not None:
+            result = _arb_transforms.lap_transform(
+                s, ball_geometry, wellbore, lam, omega, geometry_parameters)
+            if result is not None:
+                return result
 
-    # 1. Naturally fractured: modify s → s_eff
-    if lam is not None and omega is not None:
-        s_eff = apply_dual_porosity(s, lam, omega)
-    else:
-        s_eff = s
-
-    # 2. Geometry
-    psd = geometry_fn(s, s_eff, **geom_kwargs)
-
-    # 3. Skin
-    if skin != 0:
-        psd = apply_skin(psd, s, skin)
-
-    # 4. Wellbore storage
-    if cD > 0:
-        if cDd is not None and aD is not None:
-            pwd = apply_variable_wbs(psd, s, cD, cDd, aD)
-        else:
-            pwd = apply_wbs(psd, s, cD)
-    else:
-        pwd = psd
-
-    return pwd
+    # 1. Naturally fractured: s -> s_eff;  2. geometry;  3-4. skin, then storage
+    pressure = geometry_fn(s, effective_s(s, lam, omega), **geometry_parameters)
+    return wellbore.apply(pressure, s)
 
 
 # ============================================================================
@@ -980,15 +843,39 @@ def hybrid_rate(
             Reciprocal rate derivative, :math:`1 / (t_D \\, d(1/q_D)/dt_D)`.
 
         qDdi : ndarray
-            Cumulative-normalized rate (integral-average rate).
+            Cumulative-normalized rate (integral-average rate). The integral
+            over ``[0, t_0]`` extrapolates ``q_D ~ t^n`` through the first two
+            samples, so the first samples carry that extrapolation error
+            (measured 1-16% at ``t_0``, falling off as ``t_0 / t``).
 
         qDdid : ndarray
             Integral derivative, :math:`q_{Ddi} - q_{D,\\mathrm{hybrid}}`.
-    """
-    from scipy.integrate import simpson
 
+    Raises
+    ------
+        ValueError
+            For arrays of different shapes or fewer than two points, a time
+            grid that is not positive and strictly increasing, or first two
+            rates that are not positive or fall faster than ``1/t`` (the
+            ``[0, t_0]`` extrapolation needs ``n > -1``).
+
+        ImportError
+            When scipy is not installed (``pip install gwr-inversion[hybrid]``).
+    """
+    try:
+        from scipy.integrate import simpson
+    except ImportError as error:
+        raise ImportError(
+            "hybrid_rate needs scipy; install with: pip install gwr-inversion[hybrid]") from error
+
+    if not b > 0:
+        raise ValueError(f"hybrid_rate needs the Arps exponent b > 0, got {b!r}")
     qD = np.asarray(qD, dtype=np.float64)
     time = np.asarray(time, dtype=np.float64)
+    if qD.ndim != 1 or qD.shape != time.shape or len(time) < 2:
+        raise ValueError("hybrid_rate needs qD and time as 1-D arrays of the same length >= 2")
+    if not (np.all(time > 0) and np.all(np.diff(time) > 0)):
+        raise ValueError("hybrid_rate needs time positive and strictly increasing")
 
     # Arps correction
     qD_hyp = 1 / (1 + time * b) ** (1 / b) - np.exp(-time)
@@ -1000,15 +887,24 @@ def hybrid_rate(
     # Reciprocal rate derivative: 1 / (tD * d(1/qD)/dtD)
     qDdr = 1 / (time * np.gradient(1 / qD_hybrid, time))
 
-    # Cumulative-normalized rate: (∫₀ᵗ qD dτ) / t
-    qDdi = np.array([
-        simpson(qD_hybrid[:i + 1], x=time[:i + 1]) for i in range(len(time))
-    ]) / time
-
-    # Power-law extrapolation for the first point (avoid 0/0)
-    B = float(mp.log(qD_hybrid[1] / qD_hybrid[0]) / mp.log(time[1] / time[0]))
-    A = qD_hybrid[0] / time[0] ** B
-    qDdi[0] = A / (B + 1) * time[0] ** (B + 1)
+    # Cumulative-normalized rate: (∫₀ᵗ qD dτ) / t. Before the first sample, qD is
+    # extrapolated as a power law qD ~ t^exponent through the first two samples, so
+    # ∫₀^t0 qD dτ = qD(t0) t0 / (exponent + 1); Simpson's rule covers t0 to t.
+    first_rates = qD_hybrid[:2]
+    if not np.all(np.isfinite(first_rates) & (first_rates > 0)):
+        raise ValueError(f"hybrid_rate needs the first two hybrid rates positive and finite, "
+                         f"got {first_rates.tolist()}")
+    power_law_exponent = float(np.log(first_rates[1] / first_rates[0]) / np.log(time[1] / time[0]))
+    if not power_law_exponent > -1:
+        raise ValueError(
+            f"the rate falls faster than 1/t between the first two samples (power-law exponent "
+            f"{power_law_exponent:.3g} <= -1), so the integral from t = 0 cannot be "
+            f"extrapolated; start the time grid earlier, in transient flow")
+    first_interval_integral = qD_hybrid[0] * time[0] / (power_law_exponent + 1)
+    sampled_integral = np.array([0.0] + [
+        simpson(qD_hybrid[:i + 1], x=time[:i + 1]) for i in range(1, len(time))
+    ])
+    qDdi = (first_interval_integral + sampled_integral) / time
 
     # Integral derivative
     qDdid = qDdi - qD_hybrid

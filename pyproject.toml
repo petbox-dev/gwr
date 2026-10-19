@@ -39,8 +39,10 @@ packages = ["gwr_inversion"]
 
 [project.optional-dependencies]
 fast = ["gmpy2>=2.1.0"]
-flint = ["python-flint>=0.9.0"]
-all = ["gmpy2>=2.1.0", "python-flint>=0.9.0"]
+# python-flint 0.9 requires Python >= 3.10; older Pythons fall back to gmpy2 / mpmath Bessel.
+flint = ["python-flint>=0.9.0; python_version >= '3.10'"]
+hybrid = ["scipy>=1.6"]  # transforms.hybrid_rate / Model.hybrid_rate (scipy.integrate.simpson)
+all = ["gmpy2>=2.1.0", "python-flint>=0.9.0; python_version >= '3.10'", "scipy>=1.6"]
 
 [tool.ruff]
 line-length = 100

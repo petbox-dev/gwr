@@ -9,8 +9,8 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 import numpy as np
 from mpmath import mp
 
-from ._gmpy2 import get_ops, gm_to_mpf, gmpy2_precision
-
+from . import _flint
+from ._gmpy2 import get_ops, gmpy2_precision
 
 # ---------------------------------------------------------------------------
 # Core algorithm (single time point)
@@ -28,12 +28,21 @@ def _gaver_integers(M: int) -> Tuple[List[int], List[List[int]]]:
     # math.comb needs Python 3.8; the package supports 3.7.
     factorials = [factorial(k) for k in range(2 * M + 1)]
     coefficients = [0] * (M + 1)
-    rows: List[List[int]] = [[] for _ in range(M + 1)]
+    rows: List[List[int]] = [[1] for _ in range(M + 1)]
     for n in range(1, M + 1):
         coefficients[n] = factorials[2 * n] // (n * factorials[n - 1] ** 2)
-        rows[n] = [factorials[n] // (factorials[i] * factorials[n - i]) for i in range(n + 1)]
+        # Pascal's rule: one big-int addition per entry instead of a division.
+        previous_row = rows[n - 1]
+        rows[n] = [1] + [previous_row[i - 1] + previous_row[i] for i in range(1, n)] + [1]
     return coefficients, rows
 
+
+
+def cache_clear() -> None:
+    """Clear every internal cache: the order-0/1 Bessel values and the Gaver
+    integer tables (about 54 MB at M = 1024, per process)."""
+    _flint.cache_clear()
+    _gaver_integers.cache_clear()
 
 
 def gwr_single(
@@ -131,18 +140,6 @@ def gwr_single(
 
 
 # ---------------------------------------------------------------------------
-# Output conversion
-# ---------------------------------------------------------------------------
-
-
-def _to_output(val: Any, backend_name: str, precin: int) -> Any:
-    """Convert backend result to mpmath mpf for public API consistency."""
-    if backend_name == "gmpy2":
-        return gm_to_mpf(val, precin)
-    return val
-
-
-# ---------------------------------------------------------------------------
 # Core evaluation (single M, no refinement)
 # ---------------------------------------------------------------------------
 
@@ -157,55 +154,54 @@ def _gwr_core(
     dtype: str,
 ) -> Any:
     """Core GWR evaluation without refinement."""
-    dps = mp.dps
-    prec = round(21 * M / 10) if precin is None else precin
-    mp.dps = prec
+    # Decimal digits of working precision (mp.dps and the backend context).
+    precision_digits = round(21 * M / 10) if precin is None else precin
+    ops = get_ops(backend)
 
-    ops, backend_name = get_ops(backend)
+    with mp.workdps(precision_digits), gmpy2_precision(precision_digits):
+        if not isinstance(time, Iterable):
+            value = ops["to_mpf"](gwr_single(fn, time, M, precision_digits, ops),
+                                  precision_digits)
+            return float(value) if dtype == "float" else value
 
-    try:
-        with gmpy2_precision(prec):
-            if not isinstance(time, Iterable):
-                val = _to_output(gwr_single(fn, time, M, prec, ops), backend_name, prec)
-                return float(val) if dtype == "float" else val
+        is_array = isinstance(time, np.ndarray)
+        parallel = workers > 1
+        if isinstance(time, np.ndarray) and time.ndim < 1:
+            time = [time.item()]
+            parallel = False
 
-            if isinstance(time, np.ndarray):
-                if time.ndim >= 2:
-                    time = np.squeeze(time)
-                    if time.ndim >= 2:
-                        raise ValueError(f'Expected ndim < 2, but got {time.ndim}')
-                if time.ndim < 1:
-                    val = gwr_single(fn, time.item(), M, prec, ops)
-                    out = _to_output(val, backend_name, prec)
-                    if dtype == "float":
-                        return np.array([float(out)], dtype=np.float64)
-                    return np.array([out], dtype=object)
+        # ndarray, list or other Iterable
+        times = list(time)
+        if parallel:
+            from ._parallel import parallel_gwr
+            results = parallel_gwr(fn, times, M, precision_digits, backend, workers)
+        else:
+            results = [gwr_single(fn, t, M, precision_digits, ops) for t in times]
+        values = [ops["to_mpf"](result, precision_digits) for result in results]
+        if dtype == "float":
+            values = [float(value) for value in values]
+        if not is_array:
+            return values
+        return np.array(values, dtype=np.float64 if dtype == "float" else object)
 
-                times = list(time)
-                if workers > 1:
-                    from ._parallel import parallel_gwr
-                    results = parallel_gwr(fn, times, M, prec, backend, workers)
-                else:
-                    results = [gwr_single(fn, t, M, prec, ops) for t in times]
-                out_list = [_to_output(r, backend_name, prec) for r in results]
-                if dtype == "float":
-                    return np.array([float(v) for v in out_list], dtype=np.float64)
-                return np.array(out_list, dtype=object)
 
-            # list or other Iterable
-            times = list(time)
-            if workers > 1:
-                from ._parallel import parallel_gwr
-                results = parallel_gwr(fn, times, M, prec, backend, workers)
-            else:
-                results = [gwr_single(fn, t, M, prec, ops) for t in times]
-            out_list = [_to_output(r, backend_name, prec) for r in results]
-            if dtype == "float":
-                return [float(v) for v in out_list]
-            return out_list
-
-    finally:
-        mp.dps = dps
+def _materialize_time(
+    time: Union[float, Iterable[float], "np.ndarray[Any, Any]"],
+) -> Union[float, List[float], "np.ndarray[Any, Any]"]:
+    """
+    Time points in the form every later step reads: an Iterable becomes a list
+    (a generator would otherwise be consumed by the first evaluation and the
+    refinement would see nothing), and an ndarray loses its length-1 axes.
+    """
+    if isinstance(time, np.ndarray):
+        if time.ndim >= 2:
+            time = np.squeeze(time)
+            if time.ndim >= 2:
+                raise ValueError(f'Expected ndim < 2, but got {time.ndim}')
+        return time
+    if isinstance(time, Iterable):
+        return list(time)
+    return time
 
 
 # ---------------------------------------------------------------------------
@@ -224,50 +220,37 @@ def _refine_low_signal(
     dtype: str,
     threshold: float,
 ) -> Any:
-    """Re-evaluate low-magnitude points at 2*M for improved precision."""
-    is_ndarray = isinstance(result, np.ndarray)
-    vals = np.array(result, dtype=np.float64) if not is_ndarray else result.astype(np.float64)
+    """
+    Re-evaluate low-magnitude points at 2*M for improved precision.
 
-    peak = np.max(np.abs(vals))
+    ``time`` is the materialized time points the core evaluation used
+    (``_materialize_time``). Non-finite values neither set the peak nor get refined.
+    """
+    is_ndarray = isinstance(result, np.ndarray)
+    magnitudes = np.abs(np.asarray(result, dtype=np.float64))
+    finite_magnitudes = magnitudes[np.isfinite(magnitudes)]
+    if finite_magnitudes.size == 0:
+        return result
+    peak = finite_magnitudes.max()
     if peak == 0:
         return result
 
-    mask = np.abs(vals) < peak * threshold
+    mask = magnitudes < peak * threshold
     if not np.any(mask):
         return result
 
-    # Extract time points that need refinement
-    if isinstance(time, np.ndarray):
-        refine_times = time[mask]
-    else:
-        time_list = list(time)
-        refine_times = [time_list[i] for i in range(len(time_list)) if mask[i]]
-
+    refine_times = [time_point for time_point, refine_point
+                    in zip(np.atleast_1d(np.asarray(time, dtype=object)), mask) if refine_point]
     M_high = 2 * M
-    refined = _gwr_core(fn, refine_times, M_high, precin, backend, workers, dtype)
+    # GWR needs about 2.1 M digits; an explicit precin sized for M is too few for 2 M.
+    precin_high = None if precin is None else max(precin, round(21 * M_high / 10))
+    refined = _gwr_core(fn, refine_times, M_high, precin_high, backend, workers, dtype)
 
     # Merge refined values back
-    if is_ndarray:
-        out = result.copy()
-        if dtype == "float":
-            out[mask] = (
-                np.array(refined, dtype=np.float64)
-                if not isinstance(refined, np.ndarray)
-                else refined
-            )
-        else:
-            idx = np.where(mask)[0]
-            for i, v in zip(idx, refined):
-                out[i] = v
-        return out
-    else:
-        out = list(result)
-        j = 0
-        for i in range(len(out)):
-            if mask[i]:
-                out[i] = refined[j] if isinstance(refined, list) else refined[j]
-                j += 1
-        return out
+    out = result.copy() if is_ndarray else list(result)
+    for i, value in zip(np.flatnonzero(mask), refined):
+        out[i] = value
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +297,8 @@ def gwr(
         precision.
     refine : bool
         When True and input is array-like, re-evaluate low-magnitude points
-        at ``2 * M`` to improve precision where the solution approaches zero.
+        at ``2 * M`` to improve precision where the solution approaches zero
+        (an explicit ``precin`` is raised to ``round(2.1 * 2 * M)`` for them).
         Default False.
     refine_threshold : float
         Fraction of peak magnitude below which points are refined.
@@ -323,6 +307,7 @@ def gwr(
     if dtype not in ("float", "mpf"):
         raise ValueError(f"dtype must be 'float' or 'mpf', got {dtype!r}")
 
+    time = _materialize_time(time)
     result = _gwr_core(fn, time, M, precin, backend, workers, dtype)
 
     if refine and isinstance(result, (np.ndarray, list)):

@@ -26,9 +26,8 @@ def _evaluate_chunk(
     from ._gmpy2 import get_ops, gmpy2_precision
     from ._gwr import gwr_single
 
-    mp.dps = precin
-    ops, _ = get_ops(backend)
-    with gmpy2_precision(precin):
+    ops = get_ops(backend)
+    with mp.workdps(precin), gmpy2_precision(precin):
         return [gwr_single(fn, time, M, precin, ops) for time in times]
 
 
@@ -57,6 +56,16 @@ def shutdown_pool() -> None:
 atexit.register(shutdown_pool)
 
 
+def _interleaved_chunks(times: List[float], pool_size: int) -> List[List[float]]:
+    """
+    One interleaved chunk per worker (``times[i::n]``), so cheap and expensive
+    parts of the curve spread evenly; never more chunks than time points, so no
+    worker gets an empty chunk.
+    """
+    chunk_count = min(pool_size, len(times))
+    return [times[i::chunk_count] for i in range(chunk_count)]
+
+
 def parallel_gwr(
     fn: Callable[..., Any],
     times: List[float],
@@ -75,8 +84,8 @@ def parallel_gwr(
     Note: fn must be picklable (module-level function, not a lambda).
     """
     pool_size = min(workers, os.cpu_count() or 1)
-    chunk_count = min(pool_size, len(times))
-    chunks = [times[i::chunk_count] for i in range(chunk_count)]
+    chunks = _interleaved_chunks(times, pool_size)
+    chunk_count = len(chunks)
     pool = _get_pool(pool_size)
     try:
         futures = [pool.submit(_evaluate_chunk, chunk, fn, M, precin, backend)
