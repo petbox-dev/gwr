@@ -43,6 +43,7 @@ gwr_inversion/
 ├── _flint.py      # python-flint/ARB backend: besselk(), besseli(), K0/I0 integrals
 ├── _gmpy2_bessel.py  # gmpy2/MPFR K_n, I_n (n in {0, 1}): series + asymptotic
 ├── transforms.py  # Composable Laplace-domain geometries, modifiers, outputs
+├── _arb_transforms.py  # Ball-arithmetic lap_transform for radial_inf + linear geometries
 ├── _gwr.py        # Core GWR algorithm (gwr_single)
 ├── _talbot.py     # Fixed Talbot wrapper (via mpmath.invertlaplace)
 ├── _parallel.py   # Parallel time-point dispatch (ProcessPoolExecutor)
@@ -54,7 +55,8 @@ gwr_inversion/
 - **`_bessel.py`** — `besselk`/`besseli` dispatch (ARB, then gmpy2, then mpmath); users call these in their Laplace transform functions.
 - **`_gmpy2_bessel.py`** — gmpy2 K_0, K_1, I_0, I_1. Series path adds `2x log2(e)` guard bits; asymptotic expansion once `2x log2(e) > mp.prec + 16`. Working precision derives from `mp.prec`, not the gmpy2 context.
 - **`_gwr.py`** — `gwr_single(fn, time, M, precin, ops)` implements the GWR algorithm for one time point using the ops dict. User's `fn` always receives mpmath types; backend conversion happens transparently.
-- **`_parallel.py`** — `parallel_gwr()` dispatches time points across `ProcessPoolExecutor` workers. Requires picklable `fn` (module-level functions, not lambdas).
+- **`_parallel.py`** — `parallel_gwr()` dispatches one interleaved chunk of time points per worker to a persistent `ProcessPoolExecutor` (created on first use, reused while `workers` is unchanged, `shutdown_pool()` / atexit to release). Requires picklable `fn` (module-level functions, not lambdas).
+- **`_arb_transforms.py`** — `lap_transform` with `radial_inf` or a linear geometry runs entirely in ARB balls (one conversion in, one out). Bounded radial and fractured geometries stay on the mpf path (measured no gain in ARB); their outer boundary enters through `_bessel.bessel_k_over_i`, evaluated only to the bits it contributes.
 - **`_talbot.py`** — Thin wrapper around `mpmath.invertlaplace(method='talbot')`.
 
 Key patterns:
