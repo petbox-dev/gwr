@@ -8,8 +8,10 @@ configurations and draws one diagnostic panel per case:
   B  backend="gmpy2",  Bessel functions from mpmath   (gmpy2 GWR core only)
   C  backend="gmpy2",  library Bessel dispatch         (default install, [all])
 
-"Bessel functions from mpmath" replaces the transforms' K_n / I_n and the
-fractured-well K_0 / I_0 integrals with their mpmath equivalents.
+"Bessel functions from mpmath" runs the library as if python-flint and the
+gmpy2 Bessel code were not installed: K_n / I_n, the outer-boundary K/I
+ratio and the fractured-well K_0 / I_0 integrals all take their mpmath
+fallbacks, and lap_transform skips its ARB ball-arithmetic path.
 
 Usage:
     PYTHONPATH=. python test/benchmark.py              # M = 8 and 32
@@ -26,6 +28,8 @@ import numpy as np
 from matplotlib.axes import Axes
 from mpmath import mp
 
+import gwr_inversion._bessel as _bessel
+import gwr_inversion._flint as _flint
 import gwr_inversion.transforms as transforms
 from gwr_inversion import (
     HAS_FLINT, cache_clear, frac_bounded_nf, gwr, hybrid_rate, lap_transform,
@@ -43,27 +47,24 @@ LaplaceFunction = Callable[[Any], Any]
 # ---------------------------------------------------------------------------
 
 
-def _mpmath_besselk0_integral(z: Any) -> Any:
-    """int_0^z K_0 via the modified Struve closed form, all in mpmath."""
-    return mp.pi * z / 2 * (mp.besselk(0, z) * mp.struvel(-1, z)
-                            + mp.besselk(1, z) * mp.struvel(0, z))
+LIBRARY_ARB_GEOMETRIES = dict(transforms._ARB_GEOMETRIES)
+LIBRARY_FLAGS = (_flint.HAS_FLINT, _bessel.HAS_FLINT, _bessel.HAS_GMPY2_BESSEL)
 
 
-LIBRARY_BESSEL = (transforms._besselk, transforms._besseli,
-                  transforms._besselk0_integral, transforms._besseli0_integral)
-MPMATH_BESSEL = (mp.besselk, mp.besseli, _mpmath_besselk0_integral,
-                 lambda z: mp.besseli(0, z, -1))
+def _use_bessel(library: bool) -> None:
+    """Library dispatch (True) or the mpmath fallbacks everywhere (False)."""
+    flint_flag, dispatch_flint_flag, gmpy2_bessel_flag = (
+        LIBRARY_FLAGS if library else (False, False, False))
+    _flint.HAS_FLINT = flint_flag
+    _bessel.HAS_FLINT = dispatch_flint_flag
+    _bessel.HAS_GMPY2_BESSEL = gmpy2_bessel_flag
+    transforms._ARB_GEOMETRIES = LIBRARY_ARB_GEOMETRIES if library else {}
 
 
-def _use_bessel(functions: Tuple[Any, ...]) -> None:
-    (transforms._besselk, transforms._besseli,
-     transforms._besselk0_integral, transforms._besseli0_integral) = functions
-
-
-CONFIGURATIONS: List[Tuple[str, str, Tuple[Any, ...]]] = [
-    ("A mpmath core + mpmath Bessel", "mpmath", MPMATH_BESSEL),
-    ("B gmpy2 core + mpmath Bessel", "gmpy2", MPMATH_BESSEL),
-    ("C gmpy2 core + library Bessel", "gmpy2", LIBRARY_BESSEL),
+CONFIGURATIONS: List[Tuple[str, str, bool]] = [
+    ("A mpmath core + mpmath Bessel", "mpmath", False),
+    ("B gmpy2 core + mpmath Bessel", "gmpy2", False),
+    ("C gmpy2 core + library Bessel", "gmpy2", True),
 ]
 
 
@@ -106,16 +107,16 @@ def run_timings(orders: Sequence[int]) -> None:
         for label, laplace_function, time_array in TIMING_CASES:
             results: Dict[str, "np.ndarray[Any, Any]"] = {}
             seconds: Dict[str, float] = {}
-            for name, backend, functions in CONFIGURATIONS:
+            for name, backend, library in CONFIGURATIONS:
                 if backend == "gmpy2" and not HAS_GMPY2:
                     continue
-                _use_bessel(functions)
+                _use_bessel(library)
                 cache_clear()
                 start = timer.perf_counter()
                 results[name[0]] = np.asarray(gwr(laplace_function, time_array, M,
                                                   backend=backend))
                 seconds[name[0]] = timer.perf_counter() - start
-            _use_bessel(LIBRARY_BESSEL)
+            _use_bessel(True)
             if "C" not in seconds:
                 print(f"  {label:<54} {seconds['A']:8.2f}  (gmpy2 not installed)")
                 continue
