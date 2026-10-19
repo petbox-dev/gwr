@@ -1,6 +1,6 @@
 """Bessel function dispatch across backends (flint, gmpy2, mpmath)."""
 
-from typing import Any
+from typing import Any, Callable
 
 from mpmath import mp
 
@@ -8,6 +8,7 @@ from ._flint import (
     besselk as besselk_flint, besseli as besseli_flint, HAS_FLINT,
     besselk0_integral as besselk0_integral_flint,
     besseli0_integral as besseli0_integral_flint,
+    bessel_k_over_i as bessel_k_over_i_flint,
 )
 from ._gmpy2_bessel import (
     besselk_gmpy2 as _besselk_gmpy2, besseli_gmpy2 as _besseli_gmpy2,
@@ -38,6 +39,58 @@ def besseli(n: int, x: Any) -> Any:
     if HAS_GMPY2_BESSEL:
         return _besseli_gmpy2(n, x)
     return mp.besseli(n, x)
+
+
+# log2(K_n(z) / I_n(z)) <= _RATIO_BOUND_BITS - 2 z log2(e) for z >= 1, n in {0, 1}.
+# Measured maximum of the left side plus 2 z log2(e) over z in [1, 4000]: 1.65
+# (n = 0, approaching log2(pi) from below) and 2.98 (n = 1, at z = 1).
+_RATIO_BOUND_BITS = 3.5
+_TWO_LOG2_E = 2.8853900817779268
+_RATIO_PROBE_PRECISION = 64
+
+
+def bessel_k_over_i(order: int, z: Any, log2_sensitivity: Callable[[Any], float]) -> Any:
+    """
+    ``K_order(z) / I_order(z)`` (order 0 or 1) only as accurate as the result needs.
+
+    In a bounded-reservoir solution the outer boundary enters through this
+    ratio at ``z = sqrt(s) r_eD``, where it is about ``pi e^{-2z}``: a small
+    correction that needs few bits, and none once ``z`` is large. Evaluating
+    K and I there to full precision forces the K-series cancellation retries
+    (``2 z log2(e)`` bits) for no gain.
+
+    ``log2_sensitivity(r)`` returns log2 of ``|d ln(result) / d ln(r)|`` for a
+    ratio value ``r``; it must be non-decreasing in ``r``. The ratio returned
+    is accurate to ``mp.prec + 10 + log2_sensitivity(R)`` bits, and is
+    ``mp.zero`` when that is <= 0 (dropping the term moves the result by less
+    than ``2^-(mp.prec + 10)``).
+    """
+    def guarded_sensitivity(ratio: Any) -> float:
+        # A zero denominator in the caller's formula means no bits can be spared.
+        try:
+            return log2_sensitivity(ratio)
+        except ZeroDivisionError:
+            return float("inf")
+
+    target_bits = mp.prec + 10
+    z_mpf = mp.mpf(z)
+    z_float = float(z_mpf)
+    if z_float >= 1.0:
+        ratio_bound = mp.mpf(2) ** (_RATIO_BOUND_BITS - _TWO_LOG2_E * z_float)
+        if target_bits + guarded_sensitivity(ratio_bound) <= 0:
+            return mp.zero
+    if HAS_FLINT and z_mpf > 0:
+        ratio = bessel_k_over_i_flint(order, z_mpf, guarded_sensitivity)
+        if ratio is not None:
+            return ratio
+    with mp.workprec(_RATIO_PROBE_PRECISION):
+        probe = besselk(order, z_mpf) / besseli(order, z_mpf)
+    needed_bits = target_bits + guarded_sensitivity(2 * abs(probe))
+    if needed_bits <= 0:
+        return mp.zero
+    with mp.workprec(max(int(needed_bits) + 16, _RATIO_PROBE_PRECISION)):
+        ratio = besselk(order, z_mpf) / besseli(order, z_mpf)
+    return +ratio
 
 
 def besselk0_integral(z: Any) -> Any:

@@ -25,7 +25,13 @@ from mpmath import mp
 from ._bessel import (
     besselk as _besselk, besseli as _besseli,
     besselk0_integral as _besselk0_integral, besseli0_integral as _besseli0_integral,
+    bessel_k_over_i as _bessel_k_over_i,
 )
+
+
+def _log2(value: Any) -> float:
+    """Upper bound on log2 of a non-negative mpf (mpmath's ``mag``); -inf for zero."""
+    return float(mp.mag(value)) if value > 0 else float("-inf")
 
 
 # ============================================================================
@@ -113,15 +119,16 @@ def radial_bounded_nf(s: Any, s_eff: Any, reD: float = 1000.0) -> Any:
 
     k0 = _besselk(0, sqrt_s)
     i0 = _besseli(0, sqrt_s)
-    i1_reD = _besseli(1, sqrt_s * reD)
-    k1_reD = _besselk(1, sqrt_s * reD)
     k1 = _besselk(1, sqrt_s)
     i1 = _besseli(1, sqrt_s)
 
-    return (
-        (k0 * i1_reD + i0 * k1_reD)
-        / (sqrt_s * k1 * i1_reD - sqrt_s * i1 * k1_reD)
-    ) / s
+    # Divided through by I_1(sqrt_s reD): the boundary enters only through
+    # ratio = K_1/I_1 at sqrt_s reD, evaluated to the bits it contributes.
+    def log2_sensitivity(ratio: Any) -> float:
+        return _log2(i0 * ratio / (k0 + i0 * ratio) + i1 * ratio / abs(k1 - i1 * ratio))
+
+    ratio = _bessel_k_over_i(1, sqrt_s * reD, log2_sensitivity)
+    return (k0 + i0 * ratio) / (sqrt_s * (k1 - i1 * ratio)) / s
 
 
 def radial_bounded_cp(s: Any, s_eff: Any, reD: float = 1000.0) -> Any:
@@ -162,15 +169,16 @@ def radial_bounded_cp(s: Any, s_eff: Any, reD: float = 1000.0) -> Any:
 
     k0 = _besselk(0, sqrt_s)
     i0 = _besseli(0, sqrt_s)
-    k0_reD = _besselk(0, sqrt_s * reD)
-    i0_reD = _besseli(0, sqrt_s * reD)
     k1 = _besselk(1, sqrt_s)
     i1 = _besseli(1, sqrt_s)
 
-    return (
-        (k0 * i0_reD - i0 * k0_reD)
-        / (sqrt_s * k1 * i0_reD + sqrt_s * i1 * k0_reD)
-    ) / s
+    # Divided through by I_0(sqrt_s reD): the boundary enters only through
+    # ratio = K_0/I_0 at sqrt_s reD, evaluated to the bits it contributes.
+    def log2_sensitivity(ratio: Any) -> float:
+        return _log2(i0 * ratio / abs(k0 - i0 * ratio) + i1 * ratio / (k1 + i1 * ratio))
+
+    ratio = _bessel_k_over_i(0, sqrt_s * reD, log2_sensitivity)
+    return (k0 - i0 * ratio) / (sqrt_s * (k1 + i1 * ratio)) / s
 
 
 # ---------------------------------------------------------------------------
@@ -392,14 +400,15 @@ def frac_bounded_nf(s: Any, s_eff: Any, reD: float = 100.0,
     k0_int_2 = _besselk0_integral(sqrt_s * (1 + xD))
     inf_part = k0_int_1 + k0_int_2
 
-    # Bounded correction
-    k1_reD = _besselk(1, sqrt_s * reD)
-    i1_reD = _besseli(1, sqrt_s * reD)
-    i0_int_1 = _besseli0_integral(sqrt_s * (1 - xD))
-    i0_int_2 = _besseli0_integral(sqrt_s * (1 + xD))
-    nf_part = k1_reD / i1_reD * (i0_int_1 + i0_int_2)
+    # Bounded correction: ratio = K_1/I_1 at sqrt_s reD, to the bits it contributes
+    i0_int_sum = (_besseli0_integral(sqrt_s * (1 - xD))
+                  + _besseli0_integral(sqrt_s * (1 + xD)))
 
-    return c_ * (inf_part + nf_part)
+    def log2_sensitivity(ratio: Any) -> float:
+        return _log2(ratio * i0_int_sum / abs(inf_part + ratio * i0_int_sum))
+
+    ratio = _bessel_k_over_i(1, sqrt_s * reD, log2_sensitivity)
+    return c_ * (inf_part + ratio * i0_int_sum)
 
 
 def frac_bounded_cp(s: Any, s_eff: Any, reD: float = 100.0,
@@ -453,14 +462,15 @@ def frac_bounded_cp(s: Any, s_eff: Any, reD: float = 100.0,
     k0_int_2 = _besselk0_integral(sqrt_s * (1 + xD))
     inf_part = k0_int_1 + k0_int_2
 
-    # Constant-pressure correction
-    k0_reD = _besselk(0, sqrt_s * reD)
-    i0_reD = _besseli(0, sqrt_s * reD)
-    i0_int_1 = _besseli0_integral(sqrt_s * (1 - xD))
-    i0_int_2 = _besseli0_integral(sqrt_s * (1 + xD))
-    cp_part = k0_reD / i0_reD * (i0_int_1 + i0_int_2)
+    # Constant-pressure correction: ratio = K_0/I_0 at sqrt_s reD, to the bits it contributes
+    i0_int_sum = (_besseli0_integral(sqrt_s * (1 - xD))
+                  + _besseli0_integral(sqrt_s * (1 + xD)))
 
-    return c_ * (inf_part - cp_part)
+    def log2_sensitivity(ratio: Any) -> float:
+        return _log2(ratio * i0_int_sum / abs(inf_part - ratio * i0_int_sum))
+
+    ratio = _bessel_k_over_i(0, sqrt_s * reD, log2_sensitivity)
+    return c_ * (inf_part - ratio * i0_int_sum)
 
 
 # ============================================================================

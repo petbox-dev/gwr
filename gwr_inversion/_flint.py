@@ -204,6 +204,62 @@ def cache_clear() -> None:
         _bessel_order_01_cached.cache_clear()
 
 
+# Bits below which a ball midpoint is not trusted for the ratio's magnitude.
+_RATIO_MAGNITUDE_BITS = 4
+
+
+def _bessel_k_over_i_arb(z_arb: Any, order: int) -> Any:
+    """K_order(z) / I_order(z) for order 0 or 1 (K_1 from the Wronskian)."""
+    k0 = z_arb.bessel_k(0)
+    i0 = z_arb.bessel_i(0)
+    if order == 0:
+        return k0 / i0
+    i1 = z_arb.bessel_i(1)
+    return (1 / z_arb - i1 * k0) / i0 / i1
+
+
+def bessel_k_over_i(
+    order: int, z: Any, log2_sensitivity: Callable[[Any], float],
+) -> Optional[Any]:
+    """
+    ``K_order(z) / I_order(z)`` to the relative accuracy the caller needs.
+
+    ``log2_sensitivity(r)`` is log2 of ``|d ln(result) / d ln(r)|`` when the
+    ratio has value ``r``, non-decreasing in ``r``. The ratio is accurate to
+    ``mp.prec + 10 + log2_sensitivity(R)`` bits; ``mp.zero`` is returned when
+    that is <= 0, because dropping the term then changes the result by less
+    than ``2^-(mp.prec + 10)``. The ball's own radius decides when the ratio
+    is accurate enough. Returns None when the loop does not converge.
+    """
+    target_bits = mp.prec + _TARGET_GUARD_BITS
+    # Full precision first: its midpoint gives the magnitude, and its accuracy
+    # (reduced by the series cancellation) usually already covers the need.
+    working_bits = target_bits + _INITIAL_GUARD_BITS
+    previous_bits = _flint_ctx.prec
+    try:
+        _flint_ctx.prec = mp.prec + 64
+        z_arb = _mpf_to_arb(mp.mpf(z))
+        for _ in range(_MAX_ATTEMPTS + 2):
+            _flint_ctx.prec = working_bits
+            ratio = _bessel_k_over_i_arb(z_arb, order)
+            accuracy_bits = ratio.rel_accuracy_bits()
+            if accuracy_bits < _RATIO_MAGNITUDE_BITS:
+                working_bits = max(2 * working_bits, target_bits + _INITIAL_GUARD_BITS)
+                working_bits += max(-accuracy_bits, 0)
+                continue
+            midpoint = _arb_to_mpf(ratio)
+            # 2 |midpoint| bounds |ratio| from above once 4+ bits are correct.
+            needed_bits = target_bits + log2_sensitivity(2 * abs(midpoint))
+            if needed_bits <= 0:
+                return mp.zero
+            if accuracy_bits >= needed_bits:
+                return midpoint
+            working_bits += int(needed_bits - accuracy_bits) + _RETRY_GUARD_BITS
+        return None
+    finally:
+        _flint_ctx.prec = previous_bits
+
+
 def _besselk0_integral_arb(z_arb: Any) -> Any:
     """
     ``int_0^z K_0(t) dt = (pi z / 2) [K_0(z) L_{-1}(z) + K_1(z) L_0(z)]``.
