@@ -25,7 +25,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union
 
+import numpy as np
+
 from . import transforms
+from ._gwr import gwr
 
 RESERVOIR = "reservoir"
 
@@ -384,3 +387,66 @@ class Model:
         elif storage is not None:
             pressure = transforms.apply_wbs(pressure, s, storage.storage)
         return pressure
+
+    def laplace(self, output: str = "pressure") -> LaplaceFunction:
+        """The Laplace-domain function for ``output`` (one of ``OUTPUTS``),
+        ready for ``gwr()`` or ``talbot()``; it pickles, so ``workers > 1`` works."""
+        if output not in OUTPUTS:
+            raise ValueError(f"output must be one of {OUTPUTS}, got {output!r}")
+        return LaplaceFunction(self, output)
+
+    def pressure(self, time: Any, M: int = 32, **gwr_options: Any) -> Any:
+        """Dimensionless wellbore pressure p_wD(t)."""
+        return gwr(self.laplace("pressure"), time, M, **gwr_options)
+
+    def rate(self, time: Any, M: int = 32, **gwr_options: Any) -> Any:
+        """Dimensionless rate q_D(t) at constant wellbore pressure."""
+        return gwr(self.laplace("rate"), time, M, **gwr_options)
+
+    def cumulative(self, time: Any, M: int = 32, **gwr_options: Any) -> Any:
+        """Time integral of p_wD."""
+        return gwr(self.laplace("cumulative"), time, M, **gwr_options)
+
+    def derivative(self, time: Any, M: int = 32, **gwr_options: Any) -> Any:
+        """Bourdet derivative ``t dp_wD/dt`` (float output only)."""
+        if gwr_options.get("dtype", "float") != "float":
+            raise ValueError(
+                "derivative() supports dtype='float' only; for mpf output use "
+                "gwr(model.laplace('derivative'), ...) and multiply by t")
+        values = gwr(self.laplace("derivative"), time, M, **gwr_options)
+        if isinstance(time, np.ndarray):
+            return time.astype(np.float64) * values
+        if isinstance(time, (list, tuple)):
+            return [float(time_value) * value for time_value, value in zip(time, values)]
+        return float(time) * values
+
+    def hybrid_rate(
+        self, time: Any, b: float = 0.5, M: int = 32, **gwr_options: Any,
+    ) -> Tuple["np.ndarray[Any, Any]", "np.ndarray[Any, Any]", "np.ndarray[Any, Any]",
+               "np.ndarray[Any, Any]", "np.ndarray[Any, Any]"]:
+        """``transforms.hybrid_rate`` applied to this model's rate on ``time``."""
+        times = np.asarray(time, dtype=np.float64)
+        rate = np.asarray(self.rate(times, M, **gwr_options), dtype=np.float64)
+        return transforms.hybrid_rate(rate, times, b=b)
+
+
+OUTPUTS: Tuple[str, ...] = ("pressure", "rate", "derivative", "cumulative")
+
+_OUTPUT_TRANSFORMS: Dict[str, Callable[[Any, Any], Any]] = {
+    "pressure": transforms.output_pressure,
+    "rate": transforms.output_rate,
+    "derivative": transforms.output_derivative,
+    "cumulative": transforms.output_cumulative,
+}
+
+
+@dataclass(frozen=True)
+class LaplaceFunction:
+    """``s -> output(model.laplace_pressure(s), s)``: one parameter for ``gwr()``,
+    and picklable for ``workers > 1``."""
+
+    model: Model
+    output: str
+
+    def __call__(self, s: Any) -> Any:
+        return _OUTPUT_TRANSFORMS[self.output](self.model.laplace_pressure(s), s)
