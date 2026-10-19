@@ -1,4 +1,5 @@
 """Parallel time-point evaluation using concurrent.futures."""
+from __future__ import annotations
 
 import os
 from concurrent.futures import ProcessPoolExecutor

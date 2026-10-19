@@ -19,8 +19,8 @@ results if they are used.
 
 ```shell
 pip install gwr_inversion                # base install
-pip install gwr_inversion[fast]          # + gmpy2: ~10x speedup on GWR internals
-pip install gwr_inversion[flint]         # + python-flint: ~15x speedup on Bessel functions
+pip install gwr_inversion[fast]          # + gmpy2: faster GWR internals
+pip install gwr_inversion[flint]         # + python-flint: fast Bessel functions
 pip install gwr_inversion[all]           # both (maximum speed)
 ```
 
@@ -28,24 +28,35 @@ The two optional dependencies accelerate different parts of the computation and
 are complementary:
 
 - **gmpy2** (`[fast]`) — replaces the GWR algorithm's internal arithmetic
-  (factorial, binomial, log2, multiprecision multiply/add) with MPFR. Provides
-  ~6x speedup on transforms that do not call Bessel functions.
+  (factorial, binomial, log2, multiprecision multiply/add) with MPFR. Measured
+  3x (M=8) and 5x (M=32) on a transform without Bessel functions; about 1x on
+  Bessel-heavy transforms, where the Bessel evaluations dominate.
 
 - **python-flint** (`[flint]`) — provides fast ARB-based Bessel functions via
-  `gwr_inversion.besselk` and `gwr_inversion.besseli`. Provides ~3x speedup on
-  Bessel-heavy transforms even when gmpy2 is also installed.
+  `gwr_inversion.besselk` and `gwr_inversion.besseli`, and closed-form fracture
+  integrals. This is where most of the speedup on reservoir transforms comes
+  from.
 
-Speedup summary on a 31-point time array (M=32):
+Measured with `test/benchmark.py` (31 time points, tD = 1e1 to 1e7; fractured
+well 21 points, tD = 1e-2 to 1e2). Seconds per curve; `all` = gmpy2 +
+python-flint. Results agree with pure mpmath to <= 3.7e-8 at M=8 and
+<= 1.8e-16 at M=32.
 
 ```
-                              mpmath    gmpy2    flint    gmpy2+flint
---------------------------------------------------------------------
-ln(t)  — no Bessel            0.53s    0.09s    0.53s       0.09s
-Radial flow — Bessel-heavy    1.83s    1.34s    0.62s       0.18s
+                                         M=8                    M=32
+Transform                         mpmath  gmpy2    all   mpmath  gmpy2    all
+------------------------------------------------------------------------------
+Radial inf + WBS                    0.69   0.57   0.08     7.14   6.15   0.48
+Radial inf + variable WBS           0.99   0.93   0.12     7.03   5.92   0.72
+Radial inf + dual porosity + WBS    0.94   0.87   0.11     6.68   5.89   0.49
+Radial no-flow (reD=1000), rate     2.27   2.68   0.20    49.15  41.87   1.64
+Radial const-P (reD=1000)           1.85   1.96   0.24    29.67  26.30   1.89
+Radial no-flow + dual porosity      2.01   2.14   0.24    43.91  43.53   2.13
+Linear no-flow (no Bessel)          0.10   0.04   0.03     1.29   0.23   0.26
+Fractured well no-flow (reD=100)    3.46   3.40   0.33    68.55  64.10   2.77
 ```
 
-`[all]` is always at least as fast as either alone and is the recommended
-install for production use.
+`[all]` is the recommended install for production use.
 
 ## Development
 
@@ -123,7 +134,7 @@ def lap_rad_slow(s):
     b = mp.besselk(0, mp.sqrt(s))
     return 1.0 / (s / b + s**2 * 1e3)
 
-# After (ARB besselk, ~15x faster):
+# After (ARB besselk; see the measured table under Getting Started):
 def lap_rad_fast(s):
     b = besselk(0, mp.sqrt(s))
     return 1.0 / (s / b + s**2 * 1e3)
@@ -268,7 +279,8 @@ Talbot degree=32                               3.351e-07      0.193
 
 The primary petroleum engineering test case. No closed-form solution — GWR and
 Talbot agree to full precision. Using `gwr_inversion.besselk` (ARB via
-python-flint) instead of `mp.besselk` gives ~15x total speedup with gmpy2.
+python-flint) instead of `mp.besselk` gives 7.2x total speedup with gmpy2 on
+this transform (measured 2026-10-19).
 
 ```python
 from gwr_inversion import gwr, besselk  # besselk uses ARB if python-flint installed
@@ -281,13 +293,16 @@ def lap_rad(s):
 ```
 Method                              Time (s)   Max Rel Diff vs reference
 ------------------------------------------------------------------------
-GWR M=32 mpmath besselk (ref)          2.738   (reference)
-GWR M=32 ARB besselk + mpmath          0.610   0.000e+00
-GWR M=32 ARB besselk + gmpy2           0.181   1.355e-16
-Talbot degree=8                        0.168   9.191e-07
-Talbot degree=16                       0.382   1.536e-11
-Talbot degree=32                       0.963   0.000e+00
-Talbot degree=64                       2.626   0.000e+00
+GWR M=32 mpmath besselk (ref)          3.476   (reference)
+GWR M=32 ARB besselk + mpmath          1.606   0.000e+00
+GWR M=8 gmpy2                          0.424   1.423e-06
+GWR M=16 gmpy2                         0.986   1.888e-11
+GWR M=32 gmpy2                         2.256   1.355e-16
+GWR M=32 ARB besselk + gmpy2           0.484   1.355e-16
+Talbot degree=8                        0.287   9.191e-07
+Talbot degree=16                       0.663   1.536e-11
+Talbot degree=32                       1.767   0.000e+00
+Talbot degree=64                       4.497   0.000e+00
 ```
 
 ### Hard oscillatory: sin(t) at t=1000

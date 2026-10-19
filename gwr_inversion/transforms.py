@@ -15,6 +15,7 @@ References
     SPE Formation Evaluation, 6 (3): 369–378. SPE-18616-PA.
     https://doi.org/10.2118/18616-PA.
 """
+from __future__ import annotations
 
 from typing import Any, Callable, Optional, Tuple
 

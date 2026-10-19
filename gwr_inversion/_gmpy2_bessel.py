@@ -9,6 +9,7 @@ so about ``2 x log2(e)`` bits are lost. The series path adds that many guard
 bits. The asymptotic expansion has a minimal-term relative error near
 ``e^{-2x}``, so it is used once ``2 x log2(e)`` exceeds the working precision.
 """
+from __future__ import annotations
 
 import math
 from typing import Any

@@ -3,6 +3,7 @@ gmpy2/MPFR backend for multiprecision arithmetic.
 
 Provides mpmath ops by default; uses gmpy2.mpfr when available for ~10x speedup.
 """
+from __future__ import annotations
 
 from contextlib import contextmanager
 from typing import Any, Callable, Dict, Generator, Tuple

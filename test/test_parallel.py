@@ -1,4 +1,15 @@
-"""Tests for parallel time-point evaluation."""
+"""Tests for parallel time-point evaluation.
+
+On some Windows machines pytest prints "Windows fatal exception: access
+violation" once per worker spawned here, and the tests still pass. That is
+pytest's faulthandler reporting an exception that is caught later. It is
+raised inside endpoint-security software that hooks CreateProcessW in every
+process, when multiprocessing calls _winapi.CreateProcess with
+startup_info=None (multiprocessing/popen_spawn_win32.py, Python <= 3.12).
+Python 3.13 and later pass a STARTUPINFO there and do not show it. A plain
+ProcessPoolExecutor with nothing imported shows the same output; gwr and its
+backends are not involved.
+"""
 
 import numpy as np
 from mpmath import mp

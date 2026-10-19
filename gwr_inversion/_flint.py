@@ -21,6 +21,7 @@ Usage in a Laplace transform function::
         b = besselk(0, sqrt(s))   # uses ARB if available, else mp.besselk
         return 1.0 / (s / b + s**2 * 1e3)
 """
+from __future__ import annotations
 
 from functools import lru_cache
 from typing import Any, Callable, Optional, Tuple
