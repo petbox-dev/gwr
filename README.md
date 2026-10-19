@@ -62,6 +62,31 @@ Fractured well no-flow (reD=100)    2.68   2.48   0.20    35.95  33.78   1.38
 
 `[all]` is the recommended install for production use.
 
+## Composable models
+
+A model is a geometry plus effects. Models pickle, so `workers > 1` works.
+
+```python
+import numpy as np
+from gwr_inversion import Model, RadialNoFlow, DualPorosity, Skin, WellboreStorage
+
+model = Model(RadialNoFlow(outer_radius=1000.0),
+              DualPorosity(interporosity_flow=1e-6, storativity_ratio=0.1),
+              Skin(3.0), WellboreStorage(100.0))
+time = 10 ** np.linspace(1, 7, 61)
+pressure = model.pressure(time, M=16)
+derivative = model.derivative(time, M=16)          # t dp/dt
+rate = model.rate(time, M=16, workers=4)
+```
+
+Geometries: `RadialInfinite`, `RadialNoFlow`, `RadialConstantPressure`, `LinearInfinite`,
+`LinearNoFlow`, `LinearConstantPressure`, `FractureInfinite`, `FractureNoFlow`,
+`FractureConstantPressure`. Effects: `DualPorosity` (region level), `Skin`,
+`WellboreStorage`, `VariableWellboreStorage` (wellbore level). The composition order is fixed:
+region effects, geometry, skin, storage. `model.laplace("rate")` returns the Laplace-domain
+function for `gwr()` or `talbot()`. A user geometry subclasses `Geometry` and implements
+`laplace_pressure(s, s_eff_by_region)`.
+
 ## Development
 
 ```shell

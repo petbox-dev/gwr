@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `gwr-inversion` — Python package for numerical inversion of Laplace transforms. Implements the Gaver-Wynn-Rho algorithm (Valkó & Abate, 2002) and wraps mpmath's Fixed Talbot method.
 
-Public API: `gwr(fn, time, M=32, precin=None, backend="auto", workers=1)`, `talbot(fn, time, degree=32)`, `besselk(n, x)`, `besseli(n, x)`.
+Public API: `gwr(fn, time, M=32, precin=None, backend="auto", workers=1)`, `talbot(fn, time, degree=32)`, `besselk(n, x)`, `besseli(n, x)`, `Model(geometry, *effects)` (see `models.py`).
 
 ## Build & Install
 
@@ -43,6 +43,7 @@ gwr_inversion/
 ├── _flint.py      # python-flint/ARB backend: besselk(), besseli(), K0/I0 integrals
 ├── _gmpy2_bessel.py  # gmpy2/MPFR K_n, I_n (n in {0, 1}): series + asymptotic
 ├── transforms.py  # Composable Laplace-domain geometries, modifiers, outputs
+├── models.py      # Composable Model objects: geometries, effects, outputs
 ├── _arb_transforms.py  # Ball-arithmetic lap_transform for radial_inf + linear geometries
 ├── _gwr.py        # Core GWR algorithm (gwr_single)
 ├── _talbot.py     # Fixed Talbot wrapper (via mpmath.invertlaplace)
@@ -50,13 +51,14 @@ gwr_inversion/
 ```
 
 - **`__init__.py`** — Entry points. `gwr()` handles input polymorphism (float/list/ndarray), precision context, backend selection, and parallel dispatch. Returns `float` / float64 `ndarray` by default (`dtype="float"`); `dtype="mpf"` returns `mp.mpf` regardless of backend.
-- **`_gmpy2.py`** — Provides `get_ops(backend)` returning a dict of math operations (`log2`, `mpf`, `fac`, `binomial`, `to_mpf`, `from_mpf`). When gmpy2 is installed and `backend="auto"`, uses MPFR via gmpy2. Also provides `gmpy2_precision(precin)` context manager to set gmpy2 context precision for all arithmetic within a block.
+- **`_gmpy2.py`** — Provides `get_ops(backend)` returning a dict of math operations (`log2`, `mpf`, `to_mpf`, `from_mpf`); the Gaver coefficients and binomials are exact ints cached in `_gwr._gaver_integers`. When gmpy2 is installed and `backend="auto"`, uses MPFR via gmpy2. Also provides `gmpy2_precision(precin)` context manager to set gmpy2 context precision for all arithmetic within a block.
 - **`_flint.py`** — Provides `besselk(n, x)` and `besseli(n, x)` using ARB (python-flint) when available. Raises ARB working precision until `rel_accuracy_bits()` reaches `mp.prec + 10` (ARB does not compensate the K_n series cancellation of ~`2x log2(e)` bits). `K_1` comes from the Wronskian (ARB's direct `bessel_k(1)` has a slow path near x = 50-300). Also `besselk0_integral` / `besseli0_integral` via Struve/1F2 closed forms. Falls back to mpmath.
 - **`_bessel.py`** — `besselk`/`besseli` dispatch (ARB, then gmpy2, then mpmath); users call these in their Laplace transform functions.
 - **`_gmpy2_bessel.py`** — gmpy2 K_0, K_1, I_0, I_1. Series path adds `2x log2(e)` guard bits; asymptotic expansion once `2x log2(e) > mp.prec + 16`. Working precision derives from `mp.prec`, not the gmpy2 context.
 - **`_gwr.py`** — `gwr_single(fn, time, M, precin, ops)` implements the GWR algorithm for one time point using the ops dict. User's `fn` always receives mpmath types; backend conversion happens transparently.
 - **`_parallel.py`** — `parallel_gwr()` dispatches one interleaved chunk of time points per worker to a persistent `ProcessPoolExecutor` (created on first use, reused while `workers` is unchanged, `shutdown_pool()` / atexit to release). Requires picklable `fn` (module-level functions, not lambdas).
 - **`_arb_transforms.py`** — `lap_transform` with `radial_inf` or a linear geometry runs entirely in ARB balls (one conversion in, one out). Bounded radial and fractured geometries stay on the mpf path (measured no gain in ARB); their outer boundary enters through `_bessel.bessel_k_over_i`, evaluated only to the bits it contributes.
+- **`models.py`** — `Model(geometry, *effects)` frozen dataclass; geometries declare `regions`; effects have a level (region: `DualPorosity`; wellbore: `Skin`, `WellboreStorage`, `VariableWellboreStorage`). Built-in geometries delegate to `transforms.lap_transform` (keeps the ARB path); user `Geometry` subclasses use the generic path. `model.laplace(output)` returns a picklable `LaplaceFunction`.
 - **`_talbot.py`** — Thin wrapper around `mpmath.invertlaplace(method='talbot')`.
 
 Key patterns:

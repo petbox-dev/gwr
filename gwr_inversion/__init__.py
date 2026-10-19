@@ -26,3 +26,10 @@ from .transforms import (  # noqa: F401
     # Hybrid rate analysis
     hybrid_rate,
 )
+
+from .models import (  # noqa: F401
+    OUTPUTS, DualPorosity, FractureConstantPressure, FractureInfinite, FractureNoFlow,
+    Geometry, LaplaceFunction, LinearConstantPressure, LinearInfinite, LinearNoFlow, Model,
+    RadialConstantPressure, RadialInfinite, RadialNoFlow, Skin, VariableWellboreStorage,
+    WellboreStorage,
+)

@@ -169,3 +169,13 @@ def test_hybrid_rate_matches_transforms() -> None:
     expected = transforms.hybrid_rate(rate, times, b=0.5)
     for value, reference in zip(model.hybrid_rate(times, b=0.5, M=8), expected):
         assert np.array_equal(value, reference)
+
+
+def test_public_exports() -> None:
+    import gwr_inversion
+    for name in ["Model", "Geometry", "LaplaceFunction", "OUTPUTS", "RadialInfinite",
+                 "RadialNoFlow", "RadialConstantPressure", "LinearInfinite", "LinearNoFlow",
+                 "LinearConstantPressure", "FractureInfinite", "FractureNoFlow",
+                 "FractureConstantPressure", "DualPorosity", "Skin", "WellboreStorage",
+                 "VariableWellboreStorage"]:
+        assert hasattr(gwr_inversion, name), name
