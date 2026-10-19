@@ -284,12 +284,11 @@ def gwr(
         'auto' (use gmpy2 if available), 'gmpy2', or 'mpmath'.
     workers : int
         Number of parallel workers for array inputs (default 1 = sequential).
-        Each call starts a new process pool, and on Windows every worker
-        re-imports the package (about 1-1.5 s for the pool), so short curves
-        do not gain. Measured on a 20-thread laptop CPU for a bounded radial
-        transform at M=32: ``workers=4`` broke even at 8 points and gave
-        2.1x at 32 points and 3.3x at 128 points. ``fn`` must be picklable
-        (a module-level function, not a lambda).
+        The first parallel call starts a process pool (about 1.5 s on Windows,
+        where every worker re-imports the package); later calls with the same
+        ``workers`` reuse it, and ``shutdown_pool()`` releases it. Each worker
+        gets one interleaved chunk of the time points. ``fn`` must be
+        picklable (a module-level function, not a lambda).
     dtype : str
         Output type. ``'float'`` (default) returns Python float / float64
         ndarray. ``'mpf'`` returns mpmath mpf objects preserving arbitrary

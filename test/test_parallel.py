@@ -14,7 +14,7 @@ backends are not involved.
 import numpy as np
 from mpmath import mp
 
-from gwr_inversion import gwr
+from gwr_inversion import _parallel, gwr, shutdown_pool
 
 
 def _lap_ln(s):
@@ -40,3 +40,25 @@ class TestParallel:
         result = gwr(_lap_ln, np.array([1.0, 5.0]), 4, workers=1)
         assert isinstance(result, np.ndarray)
         assert len(result) == 2
+
+    def test_chunks_reassemble_in_order_bitwise(self):
+        # 7 points over 3 workers: uneven interleaved chunks [0,3,6], [1,4], [2,5].
+        time = 10 ** np.linspace(-1, 3, 7)
+        seq = gwr(_lap_ln, time, 8, workers=1)
+        par = gwr(_lap_ln, time, 8, workers=3)
+        assert np.array_equal(seq, par)
+
+    def test_fewer_points_than_workers(self):
+        seq = gwr(_lap_ln, [2.0], 4, workers=1)
+        par = gwr(_lap_ln, [2.0], 4, workers=4)
+        assert par == seq
+
+    def test_pool_is_reused_and_shut_down(self):
+        _parallel.shutdown_pool()
+        gwr(_lap_ln, [1.0, 5.0], 4, workers=2)
+        first_pool = _parallel._pool
+        gwr(_lap_ln, [1.0, 5.0, 10.0], 4, workers=2)
+        assert _parallel._pool is first_pool
+        shutdown_pool()
+        assert _parallel._pool is None
+        assert gwr(_lap_ln, [1.0, 5.0], 4, workers=2) == gwr(_lap_ln, [1.0, 5.0], 4)
