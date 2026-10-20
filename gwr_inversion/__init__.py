@@ -28,8 +28,8 @@ from .transforms import (  # noqa: F401
 )
 
 from .models import (  # noqa: F401
-    OUTPUTS, DualPorosity, FractureConstantPressure, FractureInfinite, FractureNoFlow,
-    Geometry, LaplaceFunction, LinearConstantPressure, LinearInfinite, LinearNoFlow, Model,
-    RadialConstantPressure, RadialInfinite, RadialNoFlow, Skin, VariableWellboreStorage,
-    WellboreStorage,
+    OUTPUTS, DualPorosity, EffectiveRadiusSkin, FractureConstantPressure, FractureInfinite,
+    FractureNoFlow, Geometry, LaplaceFunction, LinearConstantPressure, LinearInfinite,
+    LinearNoFlow, Model, RadialConstantPressure, RadialInfinite, RadialNoFlow, Skin,
+    VariableWellboreStorage, WellboreStorage,
 )

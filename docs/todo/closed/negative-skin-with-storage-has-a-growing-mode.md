@@ -2,6 +2,13 @@
 
 Severity: medium
 Opened: 2026-10-20
+Closed: 2026-10-20 -- settled by: `EffectiveRadiusSkin` / `skin_model="effective_radius"` (the
+geometry evaluated from r_w e^{-S}; no pole for any S), and a `UserWarning` from
+`Model` and `lap_transform` when `Skin(S < 0)` is composed with storage.
+If this was wrong, you will see: `Model(RadialInfinite(), EffectiveRadiusSkin(S), WellboreStorage(C))`
+disagreeing with the branch-cut integral at `(t e^{2S}, C e^{2S}, S = 0)` in
+`test_effective_radius_skin_with_storage_is_the_scaled_integral`, or a negative-skin
+model with storage constructed without a warning.
 
 ## What happens now
 

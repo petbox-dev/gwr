@@ -104,11 +104,14 @@ def lap_transform(
     lam: Optional[float],
     omega: Optional[float],
     geometry_parameters: Dict[str, Any],
+    scale: float = 1.0,
 ) -> Optional[Any]:
     """
     ``transforms.compose`` in ball arithmetic. Returns the mpf result, or None
     (``s`` outside ``positive_real``; loop did not converge) so that the
-    caller falls back to the mpf code.
+    caller falls back to the mpf code. ``scale`` is ``rho^2`` of an
+    effective-radius skin (``geometry_parameters`` already scaled): the
+    geometry is evaluated at ``rho^2 s`` and multiplied by ``rho^2``.
     """
     s_mpf = positive_real(s)
     if s_mpf is None:
@@ -117,14 +120,19 @@ def lap_transform(
     target_bits = mp.prec + TARGET_GUARD_BITS
     working_bits = target_bits + INITIAL_GUARD_BITS
     s_arb = _flint.mpf_to_arb(s_mpf)
+    scale_arb = None if scale == 1.0 else _flint.mpf_to_arb(mp.mpf(scale))
+    s_geometry = s_arb if scale_arb is None else s_arb * scale_arb
 
     def s_eff() -> Any:
-        return effective_s(s_arb, lam, omega)
+        value = effective_s(s_arb, lam, omega)
+        return value if scale_arb is None else value * scale_arb
 
     for _ in range(MAX_ATTEMPTS):
         try:
             with _flint.flint_context.workprec(working_bits):
-                pressure = ball_geometry(s_arb, s_eff, **geometry_parameters)
+                pressure = ball_geometry(s_geometry, s_eff, **geometry_parameters)
+                if scale_arb is not None:
+                    pressure = pressure * scale_arb
                 wellbore_pressure = wellbore.apply(pressure, s_arb)
             accuracy_bits = wellbore_pressure.rel_accuracy_bits()
         except (AttributeError, TypeError):

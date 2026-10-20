@@ -6,6 +6,8 @@ evaluate mpf and ARB balls.
 """
 from __future__ import annotations
 
+import math
+import warnings
 from typing import Any, NamedTuple, Optional
 
 
@@ -176,23 +178,72 @@ def effective_s(s: Any, lam: Optional[float], omega: Optional[float]) -> Any:
     return s
 
 
+def effective_radius_scale(skin: float) -> float:
+    """
+    The factor ``rho^2 = e^{-2S}`` that turns a radial geometry into the same
+    geometry seen from the effective wellbore radius ``r_w' = r_w e^{-S}``.
+
+    With ``t_D`` and ``C_D`` defined on ``r_w``, the solution for a well of
+    radius ``r_w'`` and no skin is ``p_D(t_D) = p_D'(t_D rho^2)`` with
+    ``r_eD' = r_eD / rho``, so in Laplace space
+
+    .. math::
+
+        \\bar{p}_D(s) = \\rho^2 \\, \\bar{p}_D'(\\rho^2 s), \\qquad \\rho = e^{-S}.
+
+    Dual porosity commutes with the scaling (``s_eff' = rho^2 s_eff``) and
+    storage composes afterwards with ``C_D`` unchanged. Earlougher, R. C. Jr.
+    1977. Advances in Well Test Analysis, SPE Monograph 5, section 2.3;
+    Gringarten, A. C., Bourdet, D. P., Landel, P. A. and Kniazeff, V. J. 1979.
+    A Comparison Between Different Skin and Wellbore Storage Type-Curves for
+    Early-Time Transient Analysis. SPE-8205-MS. https://doi.org/10.2118/8205-MS.
+    """
+    return math.exp(-2.0 * skin)
+
+
+def warn_if_unstable(skin: float, storage: float, effective_radius: bool = False) -> None:
+    """
+    Warn when the infinitesimal skin ``S / s`` with ``S < 0`` is composed with
+    wellbore storage: ``1 + C_D s^2 p_S(s)`` then has a zero at some ``s* > 0``,
+    the exact inverse grows as ``e^{s* t}``, and a numerical inversion returns
+    neither that nor a physical curve. Use the effective-radius skin instead
+    (docs/wellbore-storage-real-domain.md, section 7).
+    """
+    if skin < 0 and storage > 0 and not effective_radius:
+        warnings.warn(
+            f"skin {skin!r} < 0 composed with wellbore storage {storage!r} as S/s puts a "
+            "pole of p_wD on the positive real axis; the result is not the inverse of the "
+            "transform. Use the effective-radius skin (EffectiveRadiusSkin / "
+            "skin_model='effective_radius') for a stimulated well with storage.",
+            stacklevel=3)
+
+
 class WellboreEffects(NamedTuple):
     """
     Skin and wellbore storage: steps 3 and 4 of the compositor, in that order.
 
     ``skin`` is S (0: no skin). ``storage`` is C_D (<= 0: no storage). Storage
     is variable when both ``storage_change_ratio`` (C_Dd) and ``change_rate``
-    (a_D) are set, else constant.
+    (a_D) are set, else constant. With ``effective_radius`` the skin is an
+    effective wellbore radius applied to the geometry (step 2, through
+    ``geometry_scale``) and step 3 is skipped.
     """
 
     skin: float = 0.0
     storage: float = 0.0
     storage_change_ratio: Optional[float] = None
     change_rate: Optional[float] = None
+    effective_radius: bool = False
+
+    def geometry_scale(self) -> float:
+        """``rho^2 = e^{-2S}`` for an effective-radius skin, else 1."""
+        if self.effective_radius and self.skin != 0:
+            return effective_radius_scale(self.skin)
+        return 1.0
 
     def apply(self, pressure: Any, s: Any) -> Any:
         """Wellbore pressure from the sandface ``pressure`` (mpf or ARB ball) at ``s``."""
-        if self.skin != 0:
+        if self.skin != 0 and not self.effective_radius:
             pressure = apply_skin(pressure, s, self.skin)
         if self.storage > 0:
             if self.storage_change_ratio is not None and self.change_rate is not None:

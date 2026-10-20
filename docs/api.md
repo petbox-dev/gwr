@@ -173,12 +173,24 @@ where it equals the infinite-conductivity fracture (Gringarten et al. 1974);
 | Class | Parameters | Domain | Level |
 |---|---|---|---|
 | <a id="dualporosity"></a>`DualPorosity(interporosity_flow, storativity_ratio, region="reservoir")` | λ, ω (Warren and Root 1963, pseudo-steady state) | λ > 0, 0 < ω < 1 | region |
-| <a id="skin"></a>`Skin(skin)` | S | finite | wellbore |
+| <a id="skin"></a>`Skin(skin)` | S, as `psd + S / s` | finite | wellbore |
+| <a id="effectiveradiusskin"></a>`EffectiveRadiusSkin(skin)` | S, as the effective wellbore radius r_w e^{-S} (radial geometries only) | finite | wellbore |
 | <a id="wellborestorage"></a>`WellboreStorage(storage)` | C_D | > 0 | wellbore |
 | <a id="variablewellborestorage"></a>`VariableWellboreStorage(storage, storage_change_ratio, change_rate)` | C_D, C_Dd, a_D (Hegeman et al. 1993) | C_D > 0; others finite | wellbore |
 
 The signs of C_Dd and a_D are not restricted; see
 [docs/todo/open/variable-wellbore-storage-sign-domain.md](todo/open/variable-wellbore-storage-sign-domain.md).
+
+A model takes at most one skin effect. `Skin` is the infinitesimal skin of van
+Everdingen and Hurst; `EffectiveRadiusSkin` evaluates the radial geometry from
+the radius r_w e^{-S}, so that `p̄_D(s) = ρ² p̄_D'(ρ² s)` with `r_eD' = r_eD / ρ`
+and `ρ = e^{-S}`, the skin model of the C_D e^{2S} type curves (Gringarten et
+al. 1979). The two agree at late time and differ at early time with storage.
+`Skin(S < 0)` composed with storage puts a pole of `p̄_wD` on the positive real
+axis, so the exact inverse grows without bound and the inversion returns
+something else; `Model` and `lap_transform` warn (`UserWarning`), and
+`EffectiveRadiusSkin` is the form to use for a stimulated well with storage.
+See [docs/wellbore-storage-real-domain.md](wellbore-storage-real-domain.md).
 
 ---
 
@@ -190,7 +202,7 @@ The functional layer under `Model`, for writing transforms by hand.
 
 ```python
 lap_transform(s, geometry_fn, cD=0.0, cDd=None, aD=None, lam=None, omega=None,
-              skin=0.0, **geom_kwargs)
+              skin=0.0, skin_model="infinitesimal", **geom_kwargs)
 ```
 
 `p̄_wD(s)` composed in the standard order: `s_eff` from dual porosity (when
@@ -199,10 +211,16 @@ then constant (`cD`) or variable (`cD`, `cDd`, `aD`) wellbore storage. For
 `radial_inf` and the linear geometries the whole chain runs in ARB ball
 arithmetic when python-flint is installed (same value, faster).
 
+`skin_model="effective_radius"` replaces the `S / s` term by evaluating the
+geometry from the effective wellbore radius (see [Effects](#effects)); it
+applies to `radial_inf`, `radial_bounded_nf` and `radial_bounded_cp`.
+
 Raises `ValueError` when only one of `lam`/`omega` or of `cDd`/`aD` is given,
-when `lam <= 0` or `omega` is outside (0, 1), when `cD` is negative or NaN, or
-when variable storage is given with `cD = 0`. Geometry parameters (`reD`, `xD`)
-are not checked here; `Model` checks them.
+when `lam <= 0` or `omega` is outside (0, 1), when `cD` is negative or NaN,
+when variable storage is given with `cD = 0`, or when `skin_model` is unknown
+or is `"effective_radius"` with a non-radial geometry. Warns (`UserWarning`)
+for `skin < 0` with `cD > 0` under the infinitesimal model. Geometry parameters
+(`reD`, `xD`) are not checked here; `Model` checks them.
 
 ```python
 from gwr_inversion import gwr, lap_transform, output_rate, radial_bounded_nf
@@ -240,6 +258,7 @@ contributes none.
 | `apply_skin(psd, s, skin)` | `psd + S / s` |
 | `apply_wbs(psd, s, cD)` | `1 / (1/psd + s² C_D)` |
 | `apply_variable_wbs(psd, s, cD, cDd, aD)` | `W(s) / (1/psd + s² C_D)`, `W = 1 + C_D C_Dd s / (1 + a_D s)` |
+| `effective_radius_scale(skin)` | `ρ² = e^{-2S}`; the compositor evaluates a radial geometry as `ρ² psd(ρ² s, ρ² s_eff, reD=r_eD e^{S})` |
 
 They use only `+ - * / **`, so they also work on ARB balls.
 

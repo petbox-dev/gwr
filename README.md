@@ -28,7 +28,7 @@ results inside a transform.
 | Models | [Model](docs/api.md#model), [LaplaceFunction](docs/api.md#laplacefunction), [OUTPUTS](docs/api.md#outputs), [Geometry](docs/api.md#geometry) |
 | Model outputs | [pressure](docs/api.md#model), [rate](docs/api.md#model), [derivative](docs/api.md#model), [cumulative](docs/api.md#model), [hybrid_rate](docs/api.md#model), [laplace](docs/api.md#model), [laplace_pressure](docs/api.md#model) |
 | Geometries | [RadialInfinite](docs/api.md#radialinfinite), [RadialNoFlow](docs/api.md#radialnoflow), [RadialConstantPressure](docs/api.md#radialconstantpressure), [LinearInfinite](docs/api.md#linearinfinite), [LinearNoFlow](docs/api.md#linearnoflow), [LinearConstantPressure](docs/api.md#linearconstantpressure), [FractureInfinite](docs/api.md#fractureinfinite), [FractureNoFlow](docs/api.md#fracturenoflow), [FractureConstantPressure](docs/api.md#fractureconstantpressure) |
-| Effects | [DualPorosity](docs/api.md#dualporosity), [Skin](docs/api.md#skin), [WellboreStorage](docs/api.md#wellborestorage), [VariableWellboreStorage](docs/api.md#variablewellborestorage) |
+| Effects | [DualPorosity](docs/api.md#dualporosity), [Skin](docs/api.md#skin), [EffectiveRadiusSkin](docs/api.md#effectiveradiusskin), [WellboreStorage](docs/api.md#wellborestorage), [VariableWellboreStorage](docs/api.md#variablewellborestorage) |
 | Compositor | [lap_transform](docs/api.md#lap_transform) |
 | Geometry Functions | [radial_inf](docs/api.md#geometry-functions), [radial_bounded_nf](docs/api.md#geometry-functions), [radial_bounded_cp](docs/api.md#geometry-functions), [linear_inf](docs/api.md#geometry-functions), [linear_bounded_nf](docs/api.md#geometry-functions), [linear_bounded_cp](docs/api.md#geometry-functions), [frac_inf](docs/api.md#geometry-functions), [frac_bounded_nf](docs/api.md#geometry-functions), [frac_bounded_cp](docs/api.md#geometry-functions) |
 | Physics Modifiers | [apply_dual_porosity](docs/api.md#physics-modifiers), [apply_skin](docs/api.md#physics-modifiers), [apply_wbs](docs/api.md#physics-modifiers), [apply_variable_wbs](docs/api.md#physics-modifiers) |
@@ -113,8 +113,10 @@ Wellbore storage has exact time-domain forms for several of these geometries
 (closed form for linear flow, eigen-series for bounded reservoirs, a real
 integral for infinite radial flow); they are derived and checked against `gwr()`
 in [docs/wellbore-storage-real-domain.md](docs/wellbore-storage-real-domain.md).
-Combining `Skin(S < 0)` with storage makes the composed model unstable; see the
-same document, section 7.
+Combining `Skin(S < 0)` with storage makes the composed model unstable (the
+model warns); a stimulated well with storage takes `EffectiveRadiusSkin(S)`,
+the effective-wellbore-radius skin of the C_D e^{2S} type curves. See the same
+document, section 7.
 
 ### Building a transform by hand
 

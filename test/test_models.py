@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib.util
 import inspect
 import pickle
+import warnings
 from dataclasses import dataclass
 from typing import Any, Dict, Iterator
 
@@ -13,10 +14,10 @@ from mpmath import mp
 
 from gwr_inversion import gwr, shutdown_pool, transforms
 from gwr_inversion.models import (
-    OUTPUTS, RESERVOIR, DualPorosity, FractureConstantPressure, FractureInfinite,
-    FractureNoFlow, Geometry, LaplaceFunction, LinearConstantPressure, LinearInfinite,
-    LinearNoFlow, Model, RadialConstantPressure, RadialInfinite, RadialNoFlow, Skin,
-    VariableWellboreStorage, WellboreStorage,
+    OUTPUTS, RESERVOIR, DualPorosity, EffectiveRadiusSkin, FractureConstantPressure,
+    FractureInfinite, FractureNoFlow, Geometry, LaplaceFunction, LinearConstantPressure,
+    LinearInfinite, LinearNoFlow, Model, RadialConstantPressure, RadialInfinite, RadialNoFlow,
+    Skin, VariableWellboreStorage, WellboreStorage,
 )
 
 LAPLACE_POINTS = ["0.001", "0.37", "5.0", "880.0"]
@@ -97,7 +98,8 @@ def test_model_pickles() -> None:
 
 
 @pytest.mark.parametrize("effects, error, message", [
-    ((Skin(1.0), Skin(2.0)), ValueError, "at most one Skin"),
+    ((Skin(1.0), Skin(2.0)), ValueError, "at most one skin effect"),
+    ((Skin(1.0), EffectiveRadiusSkin(2.0)), ValueError, "at most one skin effect"),
     ((WellboreStorage(10.0), VariableWellboreStorage(10.0, 1.0, 1.0)), ValueError,
      "at most one wellbore storage"),
     ((DualPorosity(1e-6, 0.1), DualPorosity(1e-5, 0.2)), ValueError,
@@ -108,6 +110,41 @@ def test_model_pickles() -> None:
 def test_validation(effects: Any, error: type, message: str) -> None:
     with pytest.raises(error, match=message):
         Model(RadialInfinite(), *effects)
+
+
+@pytest.mark.parametrize("geometry", [
+    LinearInfinite(), LinearNoFlow(), FractureInfinite(), FractureNoFlow(),
+])
+def test_effective_radius_skin_needs_a_radial_geometry(geometry: Any) -> None:
+    with pytest.raises(ValueError, match="EffectiveRadiusSkin applies to"):
+        Model(geometry, EffectiveRadiusSkin(1.0))
+
+
+def test_effective_radius_skin_needs_an_unmodified_builtin_geometry() -> None:
+    # a subclass that overrides laplace_pressure takes the generic path, where the
+    # scaling of the geometry cannot be applied
+    with pytest.raises(ValueError, match="EffectiveRadiusSkin applies to"):
+        Model(DoubledRadial(), EffectiveRadiusSkin(1.0))
+
+
+def test_negative_skin_with_storage_warns_under_the_infinitesimal_model_only() -> None:
+    with pytest.warns(UserWarning, match="pole"):
+        Model(RadialInfinite(), Skin(-1.0), WellboreStorage(5.0))
+    with pytest.warns(UserWarning, match="pole"):
+        transforms.lap_transform(mp.mpf("0.37"), transforms.radial_inf, cD=5.0, skin=-1.0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        Model(RadialInfinite(), EffectiveRadiusSkin(-1.0), WellboreStorage(5.0))
+        Model(RadialInfinite(), Skin(-1.0))
+        Model(RadialInfinite(), Skin(1.0), WellboreStorage(5.0))
+        transforms.lap_transform(mp.mpf("0.37"), transforms.radial_inf, cD=5.0, skin=-1.0,
+                                 skin_model="effective_radius")
+
+
+def test_effective_radius_model_pickles_and_compares() -> None:
+    model = Model(RadialNoFlow(50.0), EffectiveRadiusSkin(-1.0), WellboreStorage(5.0))
+    assert pickle.loads(pickle.dumps(model)) == model
+    assert model != Model(RadialNoFlow(50.0), Skin(-1.0), WellboreStorage(5.0))
 
 
 def test_geometry_type_is_checked() -> None:
@@ -188,8 +225,8 @@ def test_public_exports() -> None:
     for name in ["Model", "Geometry", "LaplaceFunction", "OUTPUTS", "RadialInfinite",
                  "RadialNoFlow", "RadialConstantPressure", "LinearInfinite", "LinearNoFlow",
                  "LinearConstantPressure", "FractureInfinite", "FractureNoFlow",
-                 "FractureConstantPressure", "DualPorosity", "Skin", "WellboreStorage",
-                 "VariableWellboreStorage"]:
+                 "FractureConstantPressure", "DualPorosity", "Skin", "EffectiveRadiusSkin",
+                 "WellboreStorage", "VariableWellboreStorage"]:
         assert hasattr(gwr_inversion, name), name
 
 
@@ -232,6 +269,7 @@ def test_builtin_subclass_override_is_honoured() -> None:
     (lambda: DualPorosity(1e-6, 1.5), "storativity_ratio"),
     (lambda: DualPorosity(-1e-6, 0.1), "interporosity_flow"),
     (lambda: Skin(float("nan")), "skin"),
+    (lambda: EffectiveRadiusSkin(float("inf")), "skin"),
     (lambda: WellboreStorage(0.0), "storage"),
     (lambda: WellboreStorage(float("inf")), "storage"),
     (lambda: VariableWellboreStorage(10.0, float("nan"), 1.0), "storage_change_ratio"),

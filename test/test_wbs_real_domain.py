@@ -8,6 +8,7 @@ that does not go through a Laplace inversion.
 from __future__ import annotations
 
 import importlib.util
+import math
 from typing import Any, Callable, Iterator, List, Tuple
 
 import numpy as np
@@ -15,8 +16,8 @@ import pytest
 from mpmath import mp
 
 from gwr_inversion import (
-    LinearInfinite, LinearNoFlow, Model, RadialInfinite, RadialNoFlow, Skin,
-    WellboreStorage, besselk, gwr,
+    DualPorosity, EffectiveRadiusSkin, LinearInfinite, LinearNoFlow, Model,
+    RadialConstantPressure, RadialInfinite, RadialNoFlow, Skin, WellboreStorage, besselk, gwr,
 )
 
 HAS_SCIPY = importlib.util.find_spec("scipy") is not None
@@ -263,3 +264,64 @@ def test_negative_skin_with_storage_has_a_real_positive_pole() -> None:
         assert rel(exact, value) < 1e-11
     # the exact inverse grows without bound: 9.07e5 at t = 100
     assert float(amplitude * (mp.exp(pole * 100) - 1)) > 9e5
+
+
+# ---------------------------------------------------------------- effective-radius skin
+
+@requires_scipy
+def test_effective_radius_skin_with_storage_is_the_scaled_integral() -> None:
+    # r_w' = r_w e^{-S}: the no-skin solution at t e^{2S} with C_D e^{2S}; no pole for S < 0
+    storage, skin = 10.0, -2.0
+    scale = math.exp(2 * skin)
+    times = [1e-2, 1.0, 10.0, 1e2, 1e4]
+    computed = Model(RadialInfinite(), EffectiveRadiusSkin(skin),
+                     WellboreStorage(storage)).pressure(times, M=32)
+    for t, value in zip(times, computed):
+        integral, err = radial_branch_cut_integral(t * scale, storage * scale, 0.0)
+        assert err < 1e-11 * abs(integral)
+        assert rel(integral, value) < 1e-11
+
+
+@pytest.mark.parametrize("geometry, skin", [
+    (RadialNoFlow(50.0), -2.0), (RadialNoFlow(50.0), 3.0), (RadialConstantPressure(50.0), 3.0),
+])
+def test_effective_radius_skin_rescales_bounded_geometries(geometry: Any, skin: float) -> None:
+    # same model written out: r_eD e^{S}, lambda e^{-2S}, C_D e^{2S}, at t e^{2S}
+    scale = math.exp(2 * skin)
+    storage = 10.0
+    times = [1e-2, 1.0, 1e2, 1e4]
+    model = Model(geometry, EffectiveRadiusSkin(skin), DualPorosity(1e-3, 0.2),
+                  WellboreStorage(storage))
+    rescaled = Model(type(geometry)(geometry.outer_radius * math.exp(skin)),
+                     DualPorosity(1e-3 / scale, 0.2), WellboreStorage(storage * scale))
+    computed = model.pressure(times, M=32)
+    expected = rescaled.pressure([t * scale for t in times], M=32)
+    for value, reference in zip(computed, expected):
+        assert rel(value, reference) < 1e-14
+
+
+def test_skin_models_agree_at_late_time_without_storage() -> None:
+    # both reduce to the ln(r_w') shift once the well radius no longer matters
+    t = 1e8
+    infinitesimal = Model(RadialInfinite(), Skin(3.0)).pressure(t, M=32)
+    effective = Model(RadialInfinite(), EffectiveRadiusSkin(3.0)).pressure(t, M=32)
+    assert rel(effective, infinitesimal) < 1e-8
+    assert rel(effective, infinitesimal) > 1e-12   # they are different models
+
+
+def test_effective_radius_skin_matches_on_both_compositor_paths() -> None:
+    from gwr_inversion import _flint, transforms
+    s = mp.mpf("0.37")
+    with_arb = transforms.lap_transform(s, transforms.radial_inf, cD=10.0, skin=-2.0,
+                                        skin_model="effective_radius")
+    had_flint = _flint.HAS_FLINT
+    _flint.HAS_FLINT = False
+    try:
+        plain = transforms.lap_transform(s, transforms.radial_inf, cD=10.0, skin=-2.0,
+                                         skin_model="effective_radius")
+    finally:
+        _flint.HAS_FLINT = had_flint
+    assert rel(with_arb, plain) < 1e-25
+    rho2 = mp.mpf(math.exp(4.0))   # by hand (rho^2 as the double the compositor uses)
+    by_hand = 1 / (1 / (rho2 * transforms.radial_inf(s * rho2, s * rho2)) + 10.0 * s * s)
+    assert rel(plain, by_hand) < 1e-25

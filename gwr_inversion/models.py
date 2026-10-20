@@ -11,9 +11,10 @@ A model is a geometry plus effects::
 
 Every effect has a level. Region effects (``DualPorosity``) change the
 Laplace variable of one region of the geometry, ``s -> s_eff``; wellbore
-effects (``Skin``, ``WellboreStorage``, ``VariableWellboreStorage``) act on
-the sandface pressure. The composition order is fixed by level: region
-effects, then the geometry, then skin, then storage. Every built-in geometry
+effects (``Skin``, ``EffectiveRadiusSkin``, ``WellboreStorage``,
+``VariableWellboreStorage``) act on the sandface pressure. The composition
+order is fixed by level: region effects, then the geometry, then skin, then
+storage. Every built-in geometry
 has one region, ``"reservoir"``; multi-region geometries (trilinear, EFR)
 will name more.
 
@@ -322,6 +323,25 @@ class Skin:
 
 
 @dataclass(frozen=True)
+class EffectiveRadiusSkin:
+    """Skin S as an effective wellbore radius r_w e^{-S}: the radial geometry is
+    evaluated from that radius, ``psd(s) = rho^2 psd'(rho^2 s)`` with
+    ``r_eD' = r_eD / rho``, ``rho = e^{-S}`` (``transforms.effective_radius_scale``).
+
+    The skin model of the C_D e^{2S} type curves (Gringarten et al. 1979), and
+    the one for a stimulated well (S < 0) with storage: ``Skin`` composed with
+    storage then has a growing mode. Radial geometries only.
+    """
+
+    skin: float
+    level: ClassVar[str] = "wellbore"
+
+    def __post_init__(self) -> None:
+        """Reject a non-finite skin."""
+        _require_in_range("skin", self.skin, -math.inf, math.inf)
+
+
+@dataclass(frozen=True)
 class WellboreStorage:
     """Constant wellbore storage, ``storage`` = C_D > 0 (``transforms.apply_wbs``)."""
 
@@ -356,7 +376,15 @@ class VariableWellboreStorage:
         _require_in_range("change_rate", self.change_rate, -math.inf, math.inf)
 
 
-Effect = Union[DualPorosity, Skin, WellboreStorage, VariableWellboreStorage]
+Effect = Union[DualPorosity, Skin, EffectiveRadiusSkin, WellboreStorage,
+               VariableWellboreStorage]
+
+
+def _uses_compose(geometry: Geometry) -> bool:
+    """True for an unmodified built-in geometry (one ``transforms.compose`` call)."""
+    return (isinstance(geometry, BuiltinGeometry)
+            and type(geometry).laplace_pressure is BuiltinGeometry.laplace_pressure
+            and geometry.regions == (RESERVOIR,))
 
 
 def _validate(geometry: Any, effects: Tuple[Any, ...]) -> None:
@@ -378,12 +406,19 @@ def _validate(geometry: Any, effects: Tuple[Any, ...]) -> None:
             porosity_regions.append(effect.region)
         elif isinstance(effect, Skin):
             skin_count += 1
+        elif isinstance(effect, EffectiveRadiusSkin):
+            skin_count += 1
+            if not (_uses_compose(geometry) and isinstance(geometry, BuiltinGeometry)
+                    and geometry.geometry_function() in transforms.RADIAL_GEOMETRIES):
+                raise ValueError(
+                    "EffectiveRadiusSkin applies to RadialInfinite, RadialNoFlow and "
+                    f"RadialConstantPressure, not {type(geometry).__name__}")
         elif isinstance(effect, (WellboreStorage, VariableWellboreStorage)):
             storage_count += 1
         else:
             raise TypeError(f"unknown effect {effect!r}")
     if skin_count > 1:
-        raise ValueError("at most one Skin")
+        raise ValueError("at most one skin effect (Skin or EffectiveRadiusSkin)")
     if storage_count > 1:
         raise ValueError(
             "at most one wellbore storage effect (WellboreStorage or VariableWellboreStorage)")
@@ -391,13 +426,18 @@ def _validate(geometry: Any, effects: Tuple[Any, ...]) -> None:
 
 def _wellbore_effects(effects: Tuple[Effect, ...]) -> transforms.WellboreEffects:
     """The skin and storage effects of a validated model as one bundle."""
-    skin = next((effect.skin for effect in effects if isinstance(effect, Skin)), 0.0)
+    skin_effect = next((effect for effect in effects
+                        if isinstance(effect, (Skin, EffectiveRadiusSkin))), None)
+    skin = 0.0 if skin_effect is None else skin_effect.skin
+    effective_radius = isinstance(skin_effect, EffectiveRadiusSkin)
     storage = next((effect for effect in effects
                     if isinstance(effect, (WellboreStorage, VariableWellboreStorage))), None)
     if isinstance(storage, VariableWellboreStorage):
         return transforms.WellboreEffects(
-            skin, storage.storage, storage.storage_change_ratio, storage.change_rate)
-    return transforms.WellboreEffects(skin, 0.0 if storage is None else storage.storage)
+            skin, storage.storage, storage.storage_change_ratio, storage.change_rate,
+            effective_radius)
+    return transforms.WellboreEffects(skin, 0.0 if storage is None else storage.storage,
+                                      effective_radius=effective_radius)
 
 
 # ---------------------------------------------------------------------------
@@ -427,11 +467,10 @@ class Model:
         object.__setattr__(self, "effects", tuple(effects))
         object.__setattr__(self, "dual_porosity_by_region", {
             effect.region: effect for effect in effects if isinstance(effect, DualPorosity)})
-        object.__setattr__(self, "wellbore", _wellbore_effects(effects))
-        object.__setattr__(self, "uses_compose", (
-            isinstance(geometry, BuiltinGeometry)
-            and type(geometry).laplace_pressure is BuiltinGeometry.laplace_pressure
-            and geometry.regions == (RESERVOIR,)))
+        wellbore = _wellbore_effects(effects)
+        transforms.warn_if_unstable(wellbore.skin, wellbore.storage, wellbore.effective_radius)
+        object.__setattr__(self, "wellbore", wellbore)
+        object.__setattr__(self, "uses_compose", _uses_compose(geometry))
 
     def laplace_pressure(self, s: Any) -> Any:
         """

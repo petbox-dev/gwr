@@ -207,8 +207,22 @@ to the point where the Gaver sequence fails, then garbage (0.43 at t = 100 for
 C_D = 100, S = −1, where the exact value is 9.4e13). The well-test practice of
 using the effective wellbore radius r_w e^{−S} and C_D e^{2S} for stimulated wells
 rather than the S/s skin term avoids this. Whether the 1970 paper discusses the
-instability I could not check. Tracked in
-`docs/todo/open/negative-skin-with-storage-has-a-growing-mode.md`.
+instability I could not check.
+
+The package now has that form: `EffectiveRadiusSkin(S)` (or
+`lap_transform(..., skin_model="effective_radius")`) evaluates the radial
+geometry from r_w' = ρ r_w, ρ = e^{−S}. With t_D and C_D defined on r_w, the
+no-skin solution for the larger well is p_D(t_D) = p_D'(t_D/ρ²) with
+r_eD' = r_eD/ρ, so p̄_D(s) = ρ² p̄_D'(ρ² s); dual porosity commutes with the
+scaling (s_eff' = ρ² s_eff, λ' = ρ² λ) and storage composes after it with C_D
+unchanged, which is the C_D e^{2S} grouping of the type curves. Since
+p̄_S = p̄_D' > 0 on the positive axis, 1 + C_D s² p̄_S has no zero there for any
+S. Checked: `Model(RadialInfinite(), EffectiveRadiusSkin(−2), WellboreStorage(10))`
+equals the integral (7) at (t e^{2S}, C_D e^{2S}, S = 0) to 2e-16 at every t;
+the bounded radial cases with dual porosity equal the explicitly rescaled model
+exactly; without storage the two skin models agree at late time (12.6148798 vs
+12.6148797 at t = 10⁸, S = 3). `Skin(S < 0)` with storage now warns. Closed
+in `docs/todo/closed/negative-skin-with-storage-has-a-growing-mode.md`.
 
 ## 8. What this means for the package
 
@@ -219,8 +233,8 @@ instability I could not check. Tracked in
 - For linear and other power-law regimes (4) and (3) are cheaper than inversion
   and exact; a user who only needs those can call them directly.
 - The negative-skin instability is a modelling limit of (1), not of the
-  inversion. Rejecting or warning on `Skin(S < 0)` combined with storage is the
-  todo item.
+  inversion; `EffectiveRadiusSkin` is the literature's model for that case and
+  `Skin(S < 0)` with storage warns.
 
 ## References
 
