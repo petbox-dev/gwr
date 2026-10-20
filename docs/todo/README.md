@@ -33,6 +33,7 @@ Sorted by severity, then oldest first.
 | Item | Opened | Severity | Summary |
 |---|---|---|---|
 | [variable-wellbore-storage-sign-domain](open/variable-wellbore-storage-sign-domain.md) | 2026-10-19 | medium | Negative cDd or aD gives negative early pressure or a pole on the GWR contour; definition unverified against Hegeman 1993 |
+| [negative-skin-with-storage-has-a-growing-mode](open/negative-skin-with-storage-has-a-growing-mode.md) | 2026-10-20 | medium | Skin < 0 with storage puts a pole at s* > 0; the exact inverse grows as e^{s* t} and gwr silently returns something else |
 | [reference-tests-require-gmpy2](open/reference-tests-require-gmpy2.md) | 2026-10-19 | medium | Regression tests pin gmpy2 rounding at ATOL 1e-12 and fail on an install without gmpy2 |
 | [readme-speed-tables-predate-lean-core](open/readme-speed-tables-predate-lean-core.md) | 2026-10-19 | low | Unit step, Ln(t) and sin(t) timing tables in the README were measured before the 2.0 GWR core |
 | [fracture-boundary-figures-show-no-boundary](open/fracture-boundary-figures-show-no-boundary.md) | 2026-10-19 | low | frac_pressure.png and frac_rate.png plot three identical curves: the time range never reaches the boundary |

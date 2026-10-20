@@ -109,6 +109,13 @@ function itself, for `gwr()` or `talbot()`. A user geometry subclasses
 `Geometry` and implements `laplace_pressure(s, s_eff_by_region)`; see
 [docs/api.md](docs/api.md#geometry).
 
+Wellbore storage has exact time-domain forms for several of these geometries
+(closed form for linear flow, eigen-series for bounded reservoirs, a real
+integral for infinite radial flow); they are derived and checked against `gwr()`
+in [docs/wellbore-storage-real-domain.md](docs/wellbore-storage-real-domain.md).
+Combining `Skin(S < 0)` with storage makes the composed model unstable; see the
+same document, section 7.
+
 ### Building a transform by hand
 
 The functional layer under `Model` composes the same pieces:

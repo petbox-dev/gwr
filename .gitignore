@@ -40,5 +40,6 @@ htmlcov/
 docs/*
 !docs/todo/
 !docs/api.md
+!docs/wellbore-storage-real-domain.md
 # Third-party lecture notes: never commit (kept explicit in case docs/* changes).
 docs/reference/
