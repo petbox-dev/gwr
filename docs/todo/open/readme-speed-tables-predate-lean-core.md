@@ -5,8 +5,8 @@ Opened: 2026-10-19
 
 ## What happens now
 
-The README's "Benchmarks" section (unit step, Ln(t), radial flow with WBS,
-sin(t) at t = 1000) was measured before commit 1013d3a ("Lean GWR core"), which
+The README's "Benchmarks" section (unit step, Ln(t), sin(t) at t = 1000) was
+measured before commit 1013d3a ("Lean GWR core"), which
 replaced per-term factorial and binomial arithmetic with exact cached integers.
 The "Performance" table near the top was re-measured on 2026-10-19 and is
 current.
@@ -21,16 +21,23 @@ Measured in the `/code-fix` Phase 3 plumbing audit (one run each, loaded laptop)
 | Unit step, M = 128 | 0.242 / 0.026 ("~10x") | 0.0576 / 0.0203 (2.8x) |
 | sin(t) at t = 1000, M = 512 | 5.007 / 0.645 | 1.511 / 0.581 (2.6x) |
 
-- The "~10x" and "~10-100x" gmpy2 claims contradict the measured 2.8x at M = 32
-  in the current Performance table.
+- The "~10x", "~10-100x", "~4.6x" and "~11 minutes to 6 seconds (~110x)" prose
+  claims (README at f9590a2) were removed by the 2.0 README rewrite (d4d3359);
+  the tables they summarised are still in the README.
 - `test_f0_hard.py` (M = 256-1024) took 10.3 s with gmpy2.
+- The README "mpmath" column was measured with gmpy2 installed, so mpmath ran on
+  its own gmpy backend (`mpmath.libmp.BACKEND == "gmpy"`). Unit step M = 128 at
+  t = 2.0: 0.0625 s that way, 0.135 s with gmpy2 absent (`/code-fix` 2026-10-21,
+  one run, loaded laptop). A plain `pip install gwr-inversion` is the slower case.
+- With gmpy2 absent, `test_f0_hard.py` took 135 s (M = 1024: 94 s); the README
+  sin(t) table gives 653.559 s for mpmath at M = 1024 (same run as above).
+- Error columns match the README for unit step (M = 8-128), Ln(t) and sin(t)
+  with gmpy2 (M = 32-1024), re-run 2026-10-21.
 
 ## What is still unverified
 
-- The "~11 minutes to 6 seconds (~110x)" claim for M = 1024 on mpmath was not
-  re-run; the mpmath number in particular may now be much lower.
-- Error columns (accuracy) are expected unchanged, since the algorithm is the
-  same; not re-checked.
+- The sin(t) mpmath rows at M = 512-1024 were not re-run with the README's
+  inputs.
 
 The README rewrite of 2026-10-19 kept the unit step, Ln(t) and sin(t) tables
 under "Benchmarks against other inversion methods", with a note that their
@@ -39,8 +46,10 @@ current Performance table supersedes.
 
 ## What would unblock it
 
-Run `python test/compare_methods.py` on an idle machine, replace the three
-tables, and remove the "measured before the 2.0 GWR core" note in the README.
+Run `python test/compare_methods.py` on an idle machine, once with gmpy2 and
+once without, replace the three tables (label which mpmath backend each column
+used), and remove the "measured before the 2.0 GWR core" note in the README.
+Then correct the f0_hard timing in `CLAUDE.md` (Testing).
 
 ## Files
 

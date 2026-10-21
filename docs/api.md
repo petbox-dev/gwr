@@ -35,14 +35,14 @@ Inverse Laplace transform by the Gaver-Wynn-Rho algorithm (Valkó and Abate 2002
 
 | Parameter | Meaning |
 |---|---|
-| `fn` | Laplace-domain function of `s` (an `mp.mpf`). It may take a second parameter, which receives `precin`. Must use `mpmath` (or this package's `besselk` / `besseli`), not `math` or `numpy`. |
-| `time` | A scalar, any iterable (list, tuple, range, generator), or an ndarray. Length-1 axes are dropped; an array with two axes longer than 1 raises `ValueError`. |
-| `M` | Number of Gaver terms. Accuracy and cost both grow with M; 8 to 32 covers most reservoir curves, and hard oscillatory transforms need several hundred. |
+| `fn` | Laplace-domain function of `s` (an `mp.mpf`). It may take a second parameter, which receives `precin`. Parameters are counted with their defaults: any function with exactly two parameters is called as `fn(s, precin)`, so bind other values with a closure or a callable class, not a default or `functools.partial` ([todo](https://github.com/petbox-dev/gwr/blob/main/docs/todo/open/fn-second-parameter-always-receives-precin.md)). Must use `mpmath` (or this package's `besselk` / `besseli`), not `math` or `numpy`. |
+| `time` | A scalar, any iterable (list, tuple, range, generator), or an ndarray. Length-1 axes are dropped; an array with two axes longer than 1 raises `ValueError`. Values must be `> 0`; this is not checked. |
+| `M` | Number of Gaver terms. Accuracy and cost both grow with M; 8 to 32 covers most reservoir curves in absolute error (use `refine` where a value decays toward zero), and hard oscillatory transforms need several hundred to about 1000. |
 | `precin` | Decimal digits of working precision. Default `round(2.1 * M)`. |
 | `backend` | `"auto"` (gmpy2 when installed), `"gmpy2"` (raises `ImportError` if absent), or `"mpmath"`. Selects the GWR arithmetic only; Bessel calls inside `fn` choose their own backend. |
-| `workers` | Processes for array input. `> 1` uses a persistent process pool (see [shutdown_pool](#shutdown_pool)); `fn` must then be picklable (a module-level function or a [LaplaceFunction](#laplacefunction), not a lambda). On Windows and macOS the calling script needs an `if __name__ == "__main__":` guard. |
+| `workers` | Processes for array input. `> 1` uses a persistent process pool (see [shutdown_pool](#shutdown_pool)); `fn` must then be picklable (a module-level function or a [LaplaceFunction](#laplacefunction), not a lambda). Where the default start method re-imports `__main__` (spawn on Windows and macOS; forkserver on Linux from Python 3.14) the calling script needs an `if __name__ == "__main__":` guard. The pool has `min(workers, os.cpu_count())` processes. |
 | `dtype` | `"float"` (default): Python `float`, float64 ndarray, or list of float. `"mpf"`: `mp.mpf` values (object ndarray for array input). |
-| `refine` | Re-evaluate points whose magnitude is below `refine_threshold` times the peak at `2 M` (an explicit `precin` is raised to `round(4.2 M)` for them). Useful where a rate decays toward zero. |
+| `refine` | Re-evaluate points whose magnitude is below `refine_threshold` times the peak at `2 M` (an explicit `precin` is raised to `round(4.2 M)` for them). Useful where a rate decays toward zero. Array input only; a scalar `time` is returned unrefined. |
 | `refine_threshold` | Fraction of the peak magnitude below which `refine` acts. |
 
 Returns the same container kind as `time`: scalar to scalar, list-like to list,
@@ -142,15 +142,17 @@ def laplace_pressure(self, s, s_eff_by_region) -> mpf
 
 `s_eff_by_region` maps each region name to its effective Laplace variable (`s`
 itself where no region effect applies). The model applies skin and storage
-after it. User geometries take the generic path; the built-in geometries also
-have a ball-arithmetic fast path.
+after it. User geometries take the generic path; `RadialInfinite` and the three
+linear geometries also have a ball-arithmetic fast path (see
+[lap_transform](#lap_transform)).
 
 ---
 
 ## Geometries
 
 All are frozen dataclasses. Each rejects parameters outside the domain shown
-(`ValueError`, which also rejects NaN and infinity).
+(`ValueError`, which also rejects NaN and infinity; a non-number such as
+`None` raises `TypeError`).
 
 | Class | Parameters (default) | Domain | Laplace function |
 |---|---|---|---|
@@ -159,13 +161,13 @@ All are frozen dataclasses. Each rejects parameters outside the domain shown
 | <a id="radialconstantpressure"></a>`RadialConstantPressure(outer_radius)` | `outer_radius` (1000) | > 1 | [radial_bounded_cp](#geometry-functions) |
 | <a id="linearinfinite"></a>`LinearInfinite(distance)` | `distance` x_D from the well (0) | >= 0 | [linear_inf](#geometry-functions) |
 | <a id="linearnoflow"></a>`LinearNoFlow(distance)` | `distance` x_D (0) | [0, 1] | [linear_bounded_nf](#geometry-functions) |
-| <a id="linearconstantpressure"></a>`LinearConstantPressure(distance)` | `distance` x_D (0) | [0, 1] | [linear_bounded_cp](#geometry-functions) |
+| <a id="linearconstantpressure"></a>`LinearConstantPressure(distance)` | `distance` x_D (0) | [0, 1]; 1 is the constant-pressure boundary and gives `nan` ([todo](https://github.com/petbox-dev/gwr/blob/main/docs/todo/open/linear-constant-pressure-accepts-the-boundary.md)) | [linear_bounded_cp](#geometry-functions) |
 | <a id="fractureinfinite"></a>`FractureInfinite(fracture_position)` | `fracture_position` x_D along the half-length (0.732) | [0, 1] | [frac_inf](#geometry-functions) |
 | <a id="fracturenoflow"></a>`FractureNoFlow(outer_radius, fracture_position)` | r_eD = r_e / x_f (100), x_D (0.732) | > 1, [0, 1] | [frac_bounded_nf](#geometry-functions) |
 | <a id="fractureconstantpressure"></a>`FractureConstantPressure(outer_radius, fracture_position)` | r_eD (100), x_D (0.732) | > 1, [0, 1] | [frac_bounded_cp](#geometry-functions) |
 
 `fracture_position = 0.732` evaluates the uniform-flux solution at the point
-where it equals the infinite-conductivity fracture (Gringarten et al. 1974);
+where it approximates the infinite-conductivity fracture (Gringarten et al. 1974);
 `0` gives the uniform-flux wellbore pressure.
 
 ## Effects
@@ -293,7 +295,8 @@ besselk(n, x)    # K_n(x)
 besseli(n, x)    # I_n(x)
 ```
 
-Drop-in replacements for `mp.besselk` / `mp.besseli` in a transform. Accurate to
+Replacements for `mp.besselk(n, x)` / `mp.besseli(n, x)` in a transform (no
+`derivative` argument). Accurate to
 the current `mp.prec`. Backends in order, each declining what it does not cover:
 
 1. ARB (python-flint): real `x > 0`; integer `n` for K, real `n` for I. Adaptive
@@ -313,13 +316,17 @@ Gaver integer tables (about 54 MB at M = 1024, per process).
 ### shutdown_pool
 
 `shutdown_pool()` stops the worker pool that `gwr(..., workers > 1)` starts on
-first use and reuses while the worker count is unchanged. The next parallel
+first use and reuses while the pool size `min(workers, os.cpu_count())` is
+unchanged. The next parallel
 call starts a new pool. Also registered with `atexit`.
 
 ### HAS_GMPY2 / HAS_FLINT / HAS_GMPY2_BESSEL
 
 Booleans: whether gmpy2 and python-flint imported, and whether the gmpy2 Bessel
-backend is available. Read-only indicators, fixed at import.
+backend is available. These root names are copies taken at import; assigning
+to them changes nothing. The live switches, read at call time, are
+`gwr_inversion._gmpy2.HAS_GMPY2` (GWR arithmetic for `backend="auto"`),
+`gwr_inversion._flint.HAS_FLINT` and `gwr_inversion._gmpy2_bessel.HAS_GMPY2_BESSEL`.
 
 ---
 

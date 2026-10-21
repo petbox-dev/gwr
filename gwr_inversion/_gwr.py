@@ -25,8 +25,7 @@ def _gaver_integers(M: int) -> Tuple[List[int], List[List[int]]]:
     Both mpmath mpf and gmpy2 mpfr multiply exactly by a Python int, so the
     sum needs no per-term conversion and each coefficient one rounding.
     """
-    # Factorials give n C(2n, n) exactly; Pascal's rule below builds the rows faster
-    # than math.comb per entry.
+    # Factorials give n C(2n, n) exactly.
     factorials = [factorial(k) for k in range(2 * M + 1)]
     coefficients = [0] * (M + 1)
     rows: List[List[int]] = [[1] for _ in range(M + 1)]
@@ -289,7 +288,8 @@ def gwr(
         Number of parallel workers for array inputs (default 1 = sequential).
         The first parallel call starts a process pool (about 1.5 s on Windows,
         where every worker re-imports the package); later calls with the same
-        ``workers`` reuse it, and ``shutdown_pool()`` releases it. Each worker
+        pool size ``min(workers, os.cpu_count())`` reuse it, and
+        ``shutdown_pool()`` releases it. Each worker
         gets one interleaved chunk of the time points. ``fn`` must be
         picklable (a module-level function, not a lambda).
     dtype : str

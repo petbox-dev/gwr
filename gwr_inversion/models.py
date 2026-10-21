@@ -215,8 +215,9 @@ class LinearConstantPressure(BuiltinGeometry):
 class FractureInfinite(BuiltinGeometry):
     """Fractured well, infinite-acting (``transforms.frac_inf``).
 
-    ``fracture_position`` is x_D along the fracture half-length (0.732 = the
-    infinite-conductivity equivalent point; 0 = uniform flux).
+    ``fracture_position`` is x_D along the fracture half-length. Default 0.732:
+    the uniform-flux solution there approximates the infinite-conductivity fracture
+    (Gringarten et al. 1974); 0 is the uniform-flux wellbore pressure.
     """
 
     fracture_position: float = 0.732

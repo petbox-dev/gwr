@@ -13,9 +13,10 @@ Version 2.0 widens the scope. The package now has three parts:
   fractured-well geometries, with dual porosity, skin and constant or variable
   wellbore storage, composed into a `Model` that returns pressure, rate, the
   Bourdet derivative, cumulative and the hybrid-rate diagnostics in time.
-- **Fast multiprecision special functions** — `besselk` / `besseli` and the
-  fracture integrals on python-flint (ARB ball arithmetic) or gmpy2 (MPFR),
-  with adaptive precision, falling back to mpmath.
+- **Fast multiprecision special functions** — `besselk` / `besseli` on
+  python-flint (ARB ball arithmetic) or gmpy2 (MPFR, orders 0 and 1), and the
+  fracture integrals on python-flint, with adaptive precision, falling back to
+  mpmath.
 
 A Laplace transform you write yourself is a function of the Laplace variable
 `s` that uses `mpmath` (or this package's `besselk` / `besseli`). The `math`
@@ -24,27 +25,27 @@ results inside a transform.
 
 | Category | Members |
 |---|---|
-| Inversion | [gwr](docs/api.md#gwr), [talbot](docs/api.md#talbot) |
-| Models | [Model](docs/api.md#model), [LaplaceFunction](docs/api.md#laplacefunction), [OUTPUTS](docs/api.md#outputs), [Geometry](docs/api.md#geometry) |
-| Model outputs | [pressure](docs/api.md#model), [rate](docs/api.md#model), [derivative](docs/api.md#model), [cumulative](docs/api.md#model), [hybrid_rate](docs/api.md#model), [laplace](docs/api.md#model), [laplace_pressure](docs/api.md#model) |
-| Geometries | [RadialInfinite](docs/api.md#radialinfinite), [RadialNoFlow](docs/api.md#radialnoflow), [RadialConstantPressure](docs/api.md#radialconstantpressure), [LinearInfinite](docs/api.md#linearinfinite), [LinearNoFlow](docs/api.md#linearnoflow), [LinearConstantPressure](docs/api.md#linearconstantpressure), [FractureInfinite](docs/api.md#fractureinfinite), [FractureNoFlow](docs/api.md#fracturenoflow), [FractureConstantPressure](docs/api.md#fractureconstantpressure) |
-| Effects | [DualPorosity](docs/api.md#dualporosity), [Skin](docs/api.md#skin), [WellboreStorage](docs/api.md#wellborestorage), [VariableWellboreStorage](docs/api.md#variablewellborestorage) |
-| Compositor | [lap_transform](docs/api.md#lap_transform) |
-| Geometry Functions | [radial_inf](docs/api.md#geometry-functions), [radial_bounded_nf](docs/api.md#geometry-functions), [radial_bounded_cp](docs/api.md#geometry-functions), [linear_inf](docs/api.md#geometry-functions), [linear_bounded_nf](docs/api.md#geometry-functions), [linear_bounded_cp](docs/api.md#geometry-functions), [frac_inf](docs/api.md#geometry-functions), [frac_bounded_nf](docs/api.md#geometry-functions), [frac_bounded_cp](docs/api.md#geometry-functions) |
-| Physics Modifiers | [apply_dual_porosity](docs/api.md#physics-modifiers), [apply_skin](docs/api.md#physics-modifiers), [apply_wbs](docs/api.md#physics-modifiers), [apply_variable_wbs](docs/api.md#physics-modifiers) |
-| Output Transforms | [output_pressure](docs/api.md#output-transforms), [output_rate](docs/api.md#output-transforms), [output_derivative](docs/api.md#output-transforms), [output_cumulative](docs/api.md#output-transforms) |
-| Rate Analysis | [hybrid_rate](docs/api.md#hybrid_rate) |
-| Special Functions | [besselk](docs/api.md#besselk--besseli), [besseli](docs/api.md#besselk--besseli) |
-| Runtime | [cache_clear](docs/api.md#cache_clear), [shutdown_pool](docs/api.md#shutdown_pool), [HAS_GMPY2, HAS_FLINT, HAS_GMPY2_BESSEL](docs/api.md#has_gmpy2--has_flint--has_gmpy2_bessel) |
+| Inversion | [gwr](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#gwr), [talbot](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#talbot) |
+| Models | [Model](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model), [LaplaceFunction](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#laplacefunction), [OUTPUTS](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#outputs), [Geometry](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry) |
+| Model outputs | [pressure](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model), [rate](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model), [derivative](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model), [cumulative](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model), [hybrid_rate](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model), [laplace](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model), [laplace_pressure](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model) |
+| Geometries | [RadialInfinite](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#radialinfinite), [RadialNoFlow](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#radialnoflow), [RadialConstantPressure](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#radialconstantpressure), [LinearInfinite](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#linearinfinite), [LinearNoFlow](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#linearnoflow), [LinearConstantPressure](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#linearconstantpressure), [FractureInfinite](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#fractureinfinite), [FractureNoFlow](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#fracturenoflow), [FractureConstantPressure](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#fractureconstantpressure) |
+| Effects | [DualPorosity](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#dualporosity), [Skin](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#skin), [WellboreStorage](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#wellborestorage), [VariableWellboreStorage](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#variablewellborestorage) |
+| Compositor | [lap_transform](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#lap_transform) |
+| Geometry Functions | [radial_inf](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry-functions), [radial_bounded_nf](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry-functions), [radial_bounded_cp](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry-functions), [linear_inf](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry-functions), [linear_bounded_nf](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry-functions), [linear_bounded_cp](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry-functions), [frac_inf](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry-functions), [frac_bounded_nf](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry-functions), [frac_bounded_cp](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry-functions) |
+| Physics Modifiers | [apply_dual_porosity](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#physics-modifiers), [apply_skin](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#physics-modifiers), [apply_wbs](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#physics-modifiers), [apply_variable_wbs](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#physics-modifiers) |
+| Output Transforms | [output_pressure](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#output-transforms), [output_rate](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#output-transforms), [output_derivative](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#output-transforms), [output_cumulative](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#output-transforms) |
+| Rate Analysis | [hybrid_rate](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#hybrid_rate) |
+| Special Functions | [besselk](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#besselk--besseli), [besseli](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#besselk--besseli) |
+| Runtime | [cache_clear](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#cache_clear), [shutdown_pool](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#shutdown_pool), [HAS_GMPY2, HAS_FLINT, HAS_GMPY2_BESSEL](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#has_gmpy2--has_flint--has_gmpy2_bessel) |
 
 ## Getting Started
 
 ```shell
 pip install gwr_inversion                # base install
-pip install gwr_inversion[fast]          # + gmpy2: faster GWR arithmetic
-pip install gwr_inversion[flint]         # + python-flint: fast Bessel functions
-pip install gwr_inversion[hybrid]        # + scipy: hybrid_rate / Model.hybrid_rate
-pip install gwr_inversion[all]           # all three
+pip install "gwr_inversion[fast]"        # + gmpy2: faster GWR arithmetic
+pip install "gwr_inversion[flint]"       # + python-flint: fast Bessel functions
+pip install "gwr_inversion[hybrid]"      # + scipy: hybrid_rate / Model.hybrid_rate
+pip install "gwr_inversion[all]"         # all three
 ```
 
 Python 3.10 or later. The required dependencies are `numpy` and `mpmath`. The
@@ -69,11 +70,11 @@ from mpmath import mp
 from gwr_inversion import gwr
 
 def lap_log(s):
-    """Laplace transform of ln(t) + 0.577216 (Euler's constant)."""
-    return -mp.log(s) / s - 0.577216 / s
+    """Laplace transform of ln(t): -(ln(s) + gamma) / s, gamma = Euler's constant."""
+    return -(mp.log(s) + mp.euler) / s
 
 gwr(lap_log, time=5.0, M=32)
-# 1.6094375773356333
+# 1.6094379124341003
 
 math.log(5.0)
 # 1.6094379124341003
@@ -97,7 +98,7 @@ model = Model(RadialNoFlow(outer_radius=1000.0),
               Skin(3.0), WellboreStorage(100.0))
 time = 10 ** np.linspace(1, 7, 61)
 
-if __name__ == "__main__":  # required for workers > 1 on Windows and macOS (spawn)
+if __name__ == "__main__":  # required for workers > 1 under spawn or forkserver
     pressure = model.pressure(time, M=16)
     derivative = model.derivative(time, M=16)          # Bourdet derivative t dp/dt
     rate = model.rate(time, M=16, workers=4)           # constant-pressure rate
@@ -107,7 +108,7 @@ Geometries and effects check their parameters (`RadialNoFlow(outer_radius=0.5)`
 raises `ValueError`). `model.laplace("rate")` returns the Laplace-domain
 function itself, for `gwr()` or `talbot()`. A user geometry subclasses
 `Geometry` and implements `laplace_pressure(s, s_eff_by_region)`; see
-[docs/api.md](docs/api.md#geometry).
+[docs/api.md](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry).
 
 ### Building a transform by hand
 
@@ -141,7 +142,7 @@ gwr(line_source_with_storage, [10.0, 100.0], M=32)
 ### Parallel evaluation
 
 ```python
-result = gwr(fn, time, M=32, workers=4)
+result = gwr(fn, time, M=32, workers=4)  # fn and time as above
 ```
 
 `workers > 1` evaluates the time points in a process pool that starts on first
@@ -252,7 +253,7 @@ series for `K_0`, and `z 1F2(1/2; 1, 3/2; z^2/4)` for `I_0`.
 git clone https://github.com/petbox-dev/gwr.git
 cd gwr
 pip install -e ".[all]"
-python -m pytest test/ -v --ignore=test/rust-bench
+python -m pytest test/ -v
 ruff check gwr_inversion/
 mypy gwr_inversion/
 ```
@@ -266,7 +267,7 @@ PYTHONPATH=. python test/generate_reference.py
 `test/benchmark.py` produces the Performance table, and
 `test/generate_figures.py` validates every geometry (M=8 against M=16) and
 writes the diagnostic figures in `test/figures/`. Open work and known issues
-are tracked in [docs/todo/](docs/todo/README.md).
+are tracked in [docs/todo/](https://github.com/petbox-dev/gwr/blob/main/docs/todo/README.md).
 
 ## Benchmarks against other inversion methods
 
@@ -274,7 +275,7 @@ These tables come from `test/compare_methods.py` and were measured before the
 2.0 GWR core, which replaced per-term factorial and binomial arithmetic with
 cached exact integers. Error columns still hold; the timings are now lower and
 the gmpy2 speedups smaller (see
-[docs/todo/open/readme-speed-tables-predate-lean-core.md](docs/todo/open/readme-speed-tables-predate-lean-core.md)).
+[docs/todo/open/readme-speed-tables-predate-lean-core.md](https://github.com/petbox-dev/gwr/blob/main/docs/todo/open/readme-speed-tables-predate-lean-core.md)).
 
 ### Unit step: H(t-1) at t=2.0
 
@@ -300,7 +301,9 @@ mpmath cohen                           32       6.066e+02      0.001
 
 ### Ln(t) across a 31-point time array
 
-All methods give the same accuracy. For a transform this cheap the process
+All methods give the same accuracy. The 3.351e-07 floor is the test transform,
+not the methods: it uses 0.577216 for Euler's constant, which is 3.351e-07 above
+the true value. For a transform this cheap the process
 pool's start-up cost outweighs the parallel gain.
 
 ```
@@ -353,4 +356,4 @@ Standardized Set of Test Problems. *Inverse Problems in Engineering* **10** (5):
 The reservoir solutions follow Ozkan and Raghavan (1991), Gringarten, Ramey and
 Raghavan (1974), Warren and Root (1963), van Everdingen and Hurst (1949),
 Hegeman, Hallford and Joseph (1993) and Fulford and Blasingame (2013); full
-citations are in [docs/api.md](docs/api.md#references).
+citations are in [docs/api.md](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#references).

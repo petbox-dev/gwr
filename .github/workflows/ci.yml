@@ -12,74 +12,92 @@ on:
   pull_request:
   workflow_dispatch:
 
+# A new push to a pull request cancels the run it supersedes. Other events group
+# by commit, so every push to main keeps its own completed run.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
 jobs:
   test:
     name: test (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
-    # 3.15 is a pre-release until October 2026; its failures do not fail the run.
-    continue-on-error: ${{ matrix.python-version == '3.15' }}
+    timeout-minutes: 30
+    # bash on every OS: the Windows default (pwsh) checks only the last command
+    # of a multi-line step.
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
         include:
-          # The persistent process pool spawns on Windows and macOS and forks on
-          # Linux (docs/todo/open/parallel-pool-keeps-running-after-a-failed-call.md).
+          # The persistent process pool uses the default start method: spawn on
+          # Windows and macOS, fork on Linux to 3.13 and forkserver from 3.14
+          # (docs/todo/open/parallel-pool-keeps-running-after-a-failed-call.md).
           - os: windows-latest
             python-version: "3.12"
           - os: macos-latest
             python-version: "3.12"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
-          allow-prereleases: true
       - name: Install the package with scipy
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[hybrid]" pytest
-      - name: Install gmpy2 and python-flint where a wheel exists
-        # A Python too new for their published wheels would otherwise build them
-        # from source; the library falls back to mpmath without them.
-        shell: bash
+      - name: Install gmpy2 and python-flint from wheels
+        # No source builds: a Python without published wheels fails here rather
+        # than compiling them.
         run: |
-          python -m pip install --only-binary=:all: "gmpy2>=2.1.0" || echo "::warning::no gmpy2 wheel for this Python"
-          python -m pip install --only-binary=:all: "python-flint>=0.9.0" || echo "::warning::no python-flint wheel for this Python"
-      - name: Show the backends in use
-        run: python -c "import gwr_inversion as g; print('gmpy2', g.HAS_GMPY2, 'flint', g.HAS_FLINT)"
+          python -m pip install --only-binary=:all: "gmpy2>=2.1.0" "python-flint>=0.9.0"
+      - name: Check the fast backends and scipy are in use
+        # Without them their tests skip and the run would still pass.
+        run: python -c "import scipy, gwr_inversion as g; print('gmpy2', g.HAS_GMPY2, 'flint', g.HAS_FLINT); assert g.HAS_GMPY2 and g.HAS_FLINT"
       - name: Run the tests
-        run: python -m pytest test/ -q --ignore=test/rust-bench
+        run: python -m pytest test/ -q
 
   test-without-optional-dependencies:
-    # The mpmath-only fallback path. The reference-data tests pin the gmpy2
-    # backend's rounding (docs/todo/open/reference-tests-require-gmpy2.md), so
-    # they are left out here until that item is settled.
+    # The mpmath-only fallback path. The five tests the -k expression excludes
+    # (it must stay exact: --deselect matches node-ID prefixes, so it would also
+    # drop test_scalar_returns_float and its siblings) compare against
+    # test/reference_data.npz, which pins the gmpy2 backend's rounding, and fail
+    # on mpmath (docs/todo/open/reference-tests-require-gmpy2.md). Remove this
+    # list when that item closes.
     name: test (ubuntu-latest, Python 3.12, numpy + mpmath only)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install the package without extras
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e . pytest
+      - name: Check no optional dependency is present
+        run: python -c "import importlib.util as util; found = [name for name in ('gmpy2', 'flint', 'scipy') if util.find_spec(name)]; assert not found, found"
       - name: Run the tests
         run: >
-          python -m pytest test/ -q --ignore=test/rust-bench
-          --ignore=test/test_ln.py --ignore=test/test_unit_step.py
-          --ignore=test/test_radial_flow.py --ignore=test/test_input_types.py
-          --ignore=test/test_f0_hard.py
+          python -m pytest test/ -q -k "not (TestLnT and test_m4)
+          and not (TestUnitStep and test_m8)
+          and not (TestInputTypes and not returns and (test_scalar or test_list or test_ndarray))"
 
   build:
     name: build wheel and sdist
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Build
@@ -90,8 +108,8 @@ jobs:
       - name: Install the built wheel and import it
         run: |
           python -m pip install dist/*.whl
-          cd /tmp && python -c "import gwr_inversion; print(gwr_inversion.gwr(lambda s: 1 / (s + 1), 1.0))"
-      - uses: actions/upload-artifact@v4
+          cd /tmp && python -c "import math, gwr_inversion; value = gwr_inversion.gwr(lambda s: 1 / (s + 1), 1.0); print(value); assert abs(value - math.exp(-1)) < 1e-9"
+      - uses: actions/upload-artifact@v5
         with:
           name: dist
           path: dist/

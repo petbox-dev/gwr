@@ -30,8 +30,8 @@ Values in `test/reference_data.npz` (read in the `/code-fix` run):
 
 Assert `abs(gwr(..., M=1024) - sin_expected) < tol`; for M = 256-768 either
 drop the cases or assert the documented non-convergence
-(`abs(result - sin_expected) > 1e-3`). The README's statement "GWR requires
-M >= 768" should then read M >= 1024 for full accuracy.
+(`abs(result - sin_expected) > 1e-3`). The README already says M = 1024 is
+needed for full accuracy (rewritten in d4d3359).
 
 ## Files
 

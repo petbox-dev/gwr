@@ -26,10 +26,12 @@ persistent pool (BASE v1.2.0) a per-call `with` block waited for them instead.
 
 ## What is still unverified
 
-On fork platforms (Linux, macOS with fork) workers are forked at first use. A
+With the fork start method (the Linux default to Python 3.13; Python 3.14 and
+later use forkserver, macOS has used spawn since 3.8) workers are forked at first use. A
 function defined after that first parallel call (REPL, notebook) is unknown to
 the workers and may fail to unpickle; a fork after pool creation inherits
-`_pool`. Not run on Linux.
+`_pool`. Neither case is tested on any platform, and the forkserver behaviour
+(Linux, Python 3.14+) for them is not examined.
 
 ## What would unblock it
 

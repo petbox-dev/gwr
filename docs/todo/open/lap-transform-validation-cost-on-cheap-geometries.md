@@ -13,7 +13,8 @@ measurable share of the call.
 
 ## Evidence
 
-`hot_path_timing.py` (scratch script), 200 points, dps 17, best of 7,
+`hot_path_timing.py` (scratch script, not kept; s-grid not recorded), 200
+points, dps 17, best of 7,
 back-to-back with a `git archive` of c14c218, three rounds:
 
 | case | c14c218 (us/call) | f9590a2 (us/call) |
@@ -27,8 +28,12 @@ back-to-back with a `git archive` of c14c218, three rounds:
   by an exception path inside the ARB loop.
 - `Model.laplace_pressure` does not pay the validation (the Model validates
   once at construction) and is at parity or faster.
-- At the `gwr_single` level a call is about 97 us per s at M = 8, so the
-  overhead is about 1-2% of a full inversion.
+- At the `gwr_single` level a `radial_bounded_nf` call is about 97 us per s at
+  M = 8, so there the overhead is about 1-2%. On `linear_bounded_nf` a call is
+  26-31 us per s (2026-10-21 re-run), so the 1-2 us overhead is about 3-7%.
+- A 2026-10-21 re-run with a log-spaced grid reproduced the linear delta
+  (+1.5 to +2 us); its `radial_inf` absolutes (53-67 us) differ, so the grid
+  differs from the original.
 
 ## What is still unverified
 

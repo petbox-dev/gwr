@@ -17,8 +17,10 @@ directly.
 - Phase 4 review of the `/code-fix` run: `talbot(fn, np.array(2.0))` raises
   `TypeError` (iteration over a 0-d array); `gwr()` returns shape (1,).
   The 0-d failure was already at BASE v1.2.0.
-- `talbot(model.laplace("rate"), [1, 10], degree=24)` agrees with `gwr` to
-  about 2e-13, so the numerics are fine; only the container and type differ.
+- With `Model(RadialInfinite(), WellboreStorage(100.0)).laplace("rate")`,
+  `talbot(..., [1, 10], degree=24)` agrees with `gwr` to 2.4e-12 at t = 1 and
+  2.4e-13 at t = 10 (about 4e-16 for plain `RadialInfinite()`), so the numerics
+  are fine; only the container and type differ.
 
 ## Blast radius
 

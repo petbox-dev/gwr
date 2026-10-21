@@ -12,15 +12,16 @@ invert slightly different times.
 
 ## Evidence
 
-Measured in the `/code-fix` run (f9590a2), radial WBS cD = 100, M = 32,
-relative difference mpmath vs gmpy2:
+Measured in the `/code-fix` run (f9590a2),
+`Model(RadialInfinite(), WellboreStorage(100.0)).laplace("pressure")`, M = 32,
+`dtype="mpf"`, relative difference mpmath vs gmpy2:
 
 | t | relative difference |
 |---|---|
 | 0.1 | 5.5e-17 |
 | 0.3 | 3.7e-17 |
 | 7.7 | 2.3e-17 |
-| 0.5 (dyadic) | 2.4e-21 |
+| 0.5 (dyadic) | 2.4e-21 at f9590a2; 7.9e-33 in two re-runs on 2026-10-21 |
 
 - A second probe with `f(t) = t^5` (slope 5) measured 2.78e-16 at t = 0.1.
 - The two backends also accept different input types: `Fraction(1, 3)` gives
