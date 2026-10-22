@@ -5,8 +5,9 @@ Provides mpmath ops by default; uses gmpy2.mpfr when available for ~10x speedup.
 """
 from __future__ import annotations
 
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from typing import Any, Callable, Dict, Generator
+from typing import Any
 
 from mpmath import mp
 
@@ -18,6 +19,13 @@ except ImportError:
     gmpy2 = None
     mpfr = None
     HAS_GMPY2 = False
+
+# Names other modules import from here (mypy --strict needs gmpy2 and mpfr listed).
+__all__ = [
+    "HAS_GMPY2", "OpsDict", "get_backend", "get_ops", "gm_from_mpf", "gm_log2", "gm_mpf",
+    "gm_to_mpf", "gmpy2", "gmpy2_precision", "mp_from_mpf", "mp_log2", "mp_mpf", "mp_to_mpf",
+    "mpfr",
+]
 
 
 def _gmpy2_bits(precin: int) -> int:
@@ -99,9 +107,9 @@ def gm_from_mpf(val: Any, precin: int) -> Any:
 # The Gaver coefficients and binomials are exact Python ints cached in
 # _gwr._gaver_integers, so the backends supply only these conversions.
 
-OpsDict = Dict[str, Callable[..., Any]]
+OpsDict = dict[str, Callable[..., Any]]
 
-BACKENDS: Dict[str, OpsDict] = {
+BACKENDS: dict[str, OpsDict] = {
     "mpmath": {
         "log2": mp_log2,
         "mpf": mp_mpf,

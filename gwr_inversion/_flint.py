@@ -16,8 +16,9 @@ mpmath; users call ``gwr_inversion.besselk`` / ``besseli``.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from functools import lru_cache
-from typing import Any, Callable, NamedTuple, Optional, Tuple
+from typing import Any, NamedTuple
 
 from mpmath import mp
 
@@ -32,8 +33,9 @@ from ._numeric import (
 # When python-flint is absent, arb/fmpz/flint_context stay unbound; every use is
 # behind a HAS_FLINT check.
 try:
+    import flint
     from flint import arb, fmpz
-    from flint import ctx as flint_context
+    flint_context = flint.ctx
     HAS_FLINT = True
 except ImportError:
     HAS_FLINT = False
@@ -68,7 +70,7 @@ def next_working_bits(working_bits: int, target_bits: int, accuracy_bits: int) -
     return working_bits + max(deficit_bits, 0) + RETRY_GUARD_BITS
 
 
-def mpf_from_raw(raw: Tuple[Any, ...]) -> Any:
+def mpf_from_raw(raw: tuple[Any, ...]) -> Any:
     """The mpf whose ``_mpf_`` tuple is ``raw``, exactly (no rounding)."""
     result = mp.mpf.__new__(mp.mpf)
     result._mpf_ = raw
@@ -91,8 +93,8 @@ def mpf_to_arb(x: Any) -> Any:
 
 
 def _adaptive_balls(
-    evaluate: Callable[[Any], Tuple[Any, ...]], x_mpf: Any,
-) -> Optional[Tuple[Any, ...]]:
+    evaluate: Callable[[Any], tuple[Any, ...]], x_mpf: Any,
+) -> tuple[Any, ...] | None:
     """
     Evaluate ``evaluate(x_arb)`` (a tuple of balls) and raise the ARB working
     precision until every ball's relative accuracy is at least
@@ -114,7 +116,7 @@ def _adaptive_balls(
     return None
 
 
-def _adaptive_ball(evaluate: Callable[[Any], Any], x_mpf: Any) -> Optional[Any]:
+def _adaptive_ball(evaluate: Callable[[Any], Any], x_mpf: Any) -> Any | None:
     """``_adaptive_balls`` for an ``evaluate`` that returns one ball."""
     values = _adaptive_balls(lambda x_arb: (evaluate(x_arb),), x_mpf)
     return None if values is None else values[0]
@@ -151,7 +153,7 @@ def _besselk_integer(order: int) -> Callable[[Any], Any]:
 
 
 @lru_cache(maxsize=_ORDER_01_CACHE_SIZE)
-def _bessel_order_01_cached(x_key: Tuple[Any, ...], precision_bits: int) -> Optional[Any]:
+def _bessel_order_01_cached(x_key: tuple[Any, ...], precision_bits: int) -> Any | None:
     """
     (K_0, K_1, I_0, I_1) for the mpf whose ``_mpf_`` tuple is ``x_key``.
 
@@ -165,12 +167,12 @@ def _bessel_order_01_cached(x_key: Tuple[Any, ...], precision_bits: int) -> Opti
     return None if values is None else BesselOrder01(*values)
 
 
-def _bessel_order_01(x_mpf: Any) -> Optional[BesselOrder01]:
+def _bessel_order_01(x_mpf: Any) -> BesselOrder01 | None:
     """Cached (K_0, K_1, I_0, I_1) at a positive finite mpf; None if not converged."""
     return _bessel_order_01_cached(x_mpf._mpf_, mp.prec)
 
 
-def besselk(n: Any, x: Any) -> Optional[Any]:
+def besselk(n: Any, x: Any) -> Any | None:
     """
     K_n(x) in ARB for integer ``n`` and positive finite real ``x``, else None.
 
@@ -196,7 +198,7 @@ def besselk(n: Any, x: Any) -> Optional[Any]:
     return _adaptive_ball(_besselk_integer(order), x_mpf)
 
 
-def besseli(n: Any, x: Any) -> Optional[Any]:
+def besseli(n: Any, x: Any) -> Any | None:
     """
     I_n(x) in ARB for positive finite real ``x``, else None. Orders 0 and 1
     share the cached evaluation used by ``besselk``.
@@ -234,7 +236,7 @@ def _bessel_k_over_i_arb(z_arb: Any, order: int) -> Any:
 
 def bessel_k_over_i_ball(
     order: int, z_arb: Any, log2_sensitivity: Callable[[Any], float], first_bits: int,
-) -> Optional[Tuple[Any, float]]:
+) -> tuple[Any, float] | None:
     """
     Ball for ``K_order(z) / I_order(z)`` and the bits the caller needs from it.
 
@@ -267,7 +269,7 @@ def bessel_k_over_i_ball(
 
 def bessel_k_over_i(
     order: int, z_mpf: Any, log2_sensitivity: Callable[[Any], float], first_bits: int,
-) -> Optional[Any]:
+) -> Any | None:
     """
     ``K_order(z) / I_order(z)`` at a positive finite mpf, accurate to the bits
     the caller needs (see ``bessel_k_over_i_ball``); ``mp.zero`` when the term
@@ -307,7 +309,7 @@ def _besseli0_integral_arb(z_arb: Any) -> Any:
     return z_arb * quarter_z2.hypgeom([arb(1) / 2], [1, arb(3) / 2])
 
 
-def besselk0_integral(z: Any) -> Optional[Any]:
+def besselk0_integral(z: Any) -> Any | None:
     """``int_0^z K_0(t) dt`` in ARB (modified Struve closed form) for positive
     finite real ``z``, else None."""
     if not HAS_FLINT:
@@ -316,7 +318,7 @@ def besselk0_integral(z: Any) -> Optional[Any]:
     return None if z_mpf is None else _adaptive_ball(_besselk0_integral_arb, z_mpf)
 
 
-def besseli0_integral(z: Any) -> Optional[Any]:
+def besseli0_integral(z: Any) -> Any | None:
     """``int_0^z I_0(t) dt`` in ARB for positive finite real ``z``, else None."""
     if not HAS_FLINT:
         return None

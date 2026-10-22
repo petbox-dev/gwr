@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-`gwr-inversion` — Python package for numerical inversion of Laplace transforms. Implements the Gaver-Wynn-Rho algorithm (Valkó & Abate, 2002) and wraps mpmath's Fixed Talbot method.
+`gwr-inversion` — Python package for numerical inversion of Laplace transforms. Implements the Gaver-Wynn-Rho algorithm (Valkó & Abate, 2004) and wraps mpmath's Fixed Talbot method.
 
 Public API: `gwr(fn, time, M=32, precin=None, backend="auto", workers=1, dtype="float", refine=False, refine_threshold=1e-4)`, `talbot(fn, time, degree=32)`, `besselk(n, x)`, `besseli(n, x)`, `Model(geometry, *effects)` (see `models.py`).
 
@@ -18,7 +18,7 @@ pip install -e ".[hybrid]" # scipy: needed by hybrid_rate / Model.hybrid_rate
 pip install -e ".[all]"    # all three
 ```
 
-Dependencies: `numpy>=1.17`, `mpmath>=1.1.0`. Optional: `gmpy2>=2.1.0`, `python-flint>=0.9.0`, `scipy>=1.6`. Requires Python >=3.10 (python-flint 0.9 needs it). CI: `.github/workflows/ci.yml`.
+Dependencies: `numpy>=1.21.3`, `mpmath>=1.1.0`. Optional: `gmpy2>=2.2.0`, `python-flint>=0.9.0`, `scipy>=1.7.2` (floors tested by the `minimum-versions` CI job). Requires Python >=3.10 (python-flint 0.9 needs it). CI: `.github/workflows/ci.yml`.
 
 ## Testing
 
@@ -26,7 +26,7 @@ Dependencies: `numpy>=1.17`, `mpmath>=1.1.0`. Optional: `gmpy2>=2.1.0`, `python-
 python -m pytest test/ -v
 ```
 
-Regression tests compare against pre-computed reference data in `test/reference_data.npz`. Regenerate with `PYTHONPATH=. python test/generate_reference.py`. The f0_hard tests (M=256-1024) take ~10 s with gmpy2 and ~1.5-2.5 minutes with gmpy2 absent (92 s and 135 s in two runs, 2026-10-21). The reference data was generated with the gmpy2 backend; without gmpy2, five tests fail (excluded by the `-k` expression in `.github/workflows/ci.yml`; see `docs/todo/open/reference-tests-require-gmpy2.md`).
+Regression tests compare against pre-computed reference data in `test/reference_data.npz`. Regenerate with `PYTHONPATH=. python test/generate_reference.py`. The f0_hard tests (M=256-1024) take ~10 s with gmpy2 and ~1.5-2.5 minutes with gmpy2 absent (92 s and 135 s in two runs, 2026-10-21). The reference data was generated with the gmpy2 backend; five tests pin its rounding and skip without gmpy2 (`pins_gmpy2_rounding` in `test/backend_markers.py`; see `docs/todo/open/reference-tests-require-gmpy2.md`).
 
 Linting/type checking:
 ```bash

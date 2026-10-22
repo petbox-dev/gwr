@@ -4,22 +4,23 @@ from __future__ import annotations
 import atexit
 import os
 import threading
+from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
-from typing import Any, Callable, List, Optional
+from typing import Any
 
 # One pool per process, created on first use and reused by later calls. Starting
 # a pool costs about 1-1.5 s on Windows (spawn re-imports numpy, mpmath, gmpy2,
 # python-flint and this package in every worker), so a pool per call made short
 # curves slower than sequential evaluation.
-_pool: Optional[ProcessPoolExecutor] = None
+_pool: ProcessPoolExecutor | None = None
 _pool_workers = 0
 _pool_lock = threading.Lock()
 
 
 def _evaluate_chunk(
-    times: List[float], fn: Callable[..., Any], M: int, precin: int, backend: str,
-) -> List[Any]:
+    times: list[float], fn: Callable[..., Any], M: int, precin: int, backend: str,
+) -> list[Any]:
     """Evaluate gwr_single at every time in ``times``. Top-level for pickling."""
     from mpmath import mp
 
@@ -56,7 +57,7 @@ def shutdown_pool() -> None:
 atexit.register(shutdown_pool)
 
 
-def _interleaved_chunks(times: List[float], pool_size: int) -> List[List[float]]:
+def _interleaved_chunks(times: list[float], pool_size: int) -> list[list[float]]:
     """
     One interleaved chunk per worker (``times[i::n]``), so cheap and expensive
     parts of the curve spread evenly; never more chunks than time points, so no
@@ -68,12 +69,12 @@ def _interleaved_chunks(times: List[float], pool_size: int) -> List[List[float]]
 
 def parallel_gwr(
     fn: Callable[..., Any],
-    times: List[float],
+    times: list[float],
     M: int,
     precin: int,
     backend: str,
     workers: int,
-) -> List[Any]:
+) -> list[Any]:
     """
     Evaluate gwr_single across time points in parallel.
 
@@ -95,7 +96,7 @@ def parallel_gwr(
         # A worker died; drop the pool so the next call starts a fresh one.
         shutdown_pool()
         raise
-    results: List[Any] = [None] * len(times)
+    results: list[Any] = [None] * len(times)
     for i, part in enumerate(parts):
         results[i::chunk_count] = part
     return results

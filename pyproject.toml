@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gwr-inversion"
-version = "2.0.0"
+version = "2.0.1"
 description = "GWR Algorithm Numerical Laplace Inversion"
 readme = "README.md"
 license = "MIT"
@@ -33,7 +33,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-    "numpy>=1.17",
+    "numpy>=1.21.3",  # first release with Python 3.10 wheels on Linux, Windows and macOS
     "mpmath>=1.1.0",
 ]
 
@@ -45,10 +45,10 @@ Documentation = "https://github.com/petbox-dev/gwr/blob/main/docs/api.md"
 packages = ["gwr_inversion"]
 
 [project.optional-dependencies]
-fast = ["gmpy2>=2.1.0"]
+fast = ["gmpy2>=2.2.0"]  # 2.2: gmpy2.context(ctx, precision=...)
 flint = ["python-flint>=0.9.0"]
-hybrid = ["scipy>=1.6"]  # transforms.hybrid_rate / Model.hybrid_rate (scipy.integrate.simpson)
-all = ["gmpy2>=2.1.0", "python-flint>=0.9.0", "scipy>=1.6"]
+hybrid = ["scipy>=1.7.2"]  # transforms.hybrid_rate / Model.hybrid_rate (scipy.integrate.simpson)
+all = ["gwr-inversion[fast,flint,hybrid]"]
 
 [tool.ruff]
 line-length = 100
@@ -81,6 +81,7 @@ ignore = [
 max-complexity = 20
 
 [tool.mypy]
+strict = true
 check_untyped_defs = true
 disallow_any_generics = true
 disallow_incomplete_defs = true

@@ -13,7 +13,8 @@ that carries more bits; the transforms never pass one).
 from __future__ import annotations
 
 import math
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 from mpmath import mp
 
@@ -84,7 +85,7 @@ def _guard_sensitivity(log2_sensitivity: Callable[[Any], float]) -> Callable[[An
     return guarded_sensitivity
 
 
-def _plan_first_bits(z_float: float, log2_sensitivity: Callable[[Any], float]) -> Optional[int]:
+def _plan_first_bits(z_float: float, log2_sensitivity: Callable[[Any], float]) -> int | None:
     """
     ARB precision for the first evaluation of ``K_n(z) / I_n(z)`` at
     ``z = z_float``: the bits an upper bound on the ratio says are needed, plus
@@ -94,7 +95,7 @@ def _plan_first_bits(z_float: float, log2_sensitivity: Callable[[Any], float]) -
     target_bits = mp.prec + TARGET_GUARD_BITS
     full_bits = target_bits + INITIAL_GUARD_BITS
     if z_float < 1.0:
-        return full_bits
+        return int(full_bits)
     ratio_bound = mp.mpf(2) ** (_RATIO_BOUND_BITS - TWO_LOG2_E * z_float)
     needed_bits = target_bits + log2_sensitivity(ratio_bound)
     if needed_bits <= 0:

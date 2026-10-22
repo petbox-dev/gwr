@@ -16,7 +16,7 @@ absent, order not 0 or 1, ``x`` outside ``_numeric.positive_real``);
 from __future__ import annotations
 
 import math
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from mpmath import mp
 
@@ -82,7 +82,7 @@ def _besseli1_series(x: Any) -> Any:
     return series_sum
 
 
-def _besselk0_series(x: Any) -> Tuple[Any, Any]:
+def _besselk0_series(x: Any) -> tuple[Any, Any]:
     """(K_0(x), I_0(x)) via power series; the K_0 series sums I_0 on the way.
     x is gmpy2 mpfr."""
     tolerance = _series_tolerance()
@@ -156,14 +156,14 @@ def _besseli_asymptotic(n: int, x: Any) -> Any:
     return prefix * _asymptotic_sum(n, x, alternating=True)
 
 
-def _accepted_argument(n: Any, x: Any) -> Optional[Any]:
+def _accepted_argument(n: Any, x: Any) -> Any | None:
     """``x`` as a positive finite mpf when this backend evaluates order ``n`` there."""
     if not (HAS_GMPY2_BESSEL and HAS_GMPY2) or n not in (0, 1):
         return None
     return positive_real(x)
 
 
-def besselk_gmpy2(n: int, x: Any) -> Optional[Any]:
+def besselk_gmpy2(n: int, x: Any) -> Any | None:
     """K_n(x) for n in {0, 1} using gmpy2 MPFR arithmetic; None when declined.
 
     Output: mpmath mpf at mp.prec. The working precision derives from mp.prec,
@@ -198,7 +198,7 @@ def besselk_gmpy2(n: int, x: Any) -> Optional[Any]:
     return gm_to_mpf(result, 0)
 
 
-def besseli_gmpy2(n: int, x: Any) -> Optional[Any]:
+def besseli_gmpy2(n: int, x: Any) -> Any | None:
     """I_n(x) for n in {0, 1} using gmpy2 MPFR arithmetic; None when declined.
 
     Output: mpmath mpf at mp.prec. The working precision derives from mp.prec,

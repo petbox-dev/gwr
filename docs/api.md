@@ -31,7 +31,7 @@ gwr(fn, time, M=32, precin=None, backend="auto", workers=1,
     dtype="float", refine=False, refine_threshold=1e-4)
 ```
 
-Inverse Laplace transform by the Gaver-Wynn-Rho algorithm (Valkó and Abate 2002).
+Inverse Laplace transform by the Gaver-Wynn-Rho algorithm (Valkó and Abate 2004).
 
 | Parameter | Meaning |
 |---|---|
@@ -332,9 +332,9 @@ to them changes nothing. The live switches, read at call time, are
 
 ## References
 
-- Valkó, P. P. and Abate, J. 2002. Comparison of Sequence Accelerators for the
+- Valkó, P. P. and Abate, J. 2004. Comparison of Sequence Accelerators for the
   Gaver Method of Numerical Laplace Transform Inversion. *Computers and
-  Mathematics with Applications* 48 (3): 629-636.
+  Mathematics with Applications* 48 (3-4): 629-636.
   <https://doi.org/10.1016/j.camwa.2002.10.017>
 - Ozkan, E. and Raghavan, R. 1991. New Solutions for Well-Test-Analysis
   Problems: Parts 1 and 2. *SPE Formation Evaluation* 6 (3): 359-378.

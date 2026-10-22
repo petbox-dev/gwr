@@ -7,7 +7,7 @@ from mpmath import mp
 from gwr_inversion import gwr
 from gwr_inversion._gmpy2 import HAS_GMPY2
 
-needs_gmpy2 = pytest.mark.skipif(not HAS_GMPY2, reason="gmpy2 not installed")
+from backend_markers import needs_gmpy2
 
 
 class TestMpmathBackend:

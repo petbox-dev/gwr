@@ -23,12 +23,13 @@ work with ``gwr(..., workers > 1)``.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import Any, Callable, ClassVar, Dict, Iterable, List, Tuple, Union
+from typing import Any, ClassVar
 
 import numpy as np
 
-from . import transforms
+from . import _modifiers, transforms
 from ._gwr import gwr
 
 RESERVOIR = "reservoir"
@@ -61,9 +62,9 @@ class Geometry:
     region effect may change) and implement ``laplace_pressure``.
     """
 
-    regions: ClassVar[Tuple[str, ...]] = (RESERVOIR,)
+    regions: ClassVar[tuple[str, ...]] = (RESERVOIR,)
 
-    def laplace_pressure(self, s: Any, s_eff_by_region: Dict[str, Any]) -> Any:
+    def laplace_pressure(self, s: Any, s_eff_by_region: dict[str, Any]) -> Any:
         """
         Dimensionless sandface pressure in Laplace space, before wellbore effects.
 
@@ -91,11 +92,11 @@ class BuiltinGeometry(Geometry):
         """The ``transforms`` function with signature ``(s, s_eff, **parameters)``."""
         raise NotImplementedError
 
-    def geometry_parameters(self) -> Dict[str, float]:
+    def geometry_parameters(self) -> dict[str, float]:
         """Keyword arguments for ``geometry_function`` (``reD``, ``xD``)."""
         return {}
 
-    def laplace_pressure(self, s: Any, s_eff_by_region: Dict[str, Any]) -> Any:
+    def laplace_pressure(self, s: Any, s_eff_by_region: dict[str, Any]) -> Any:
         """``geometry_function`` at the reservoir's effective Laplace variable.
         ``Model`` calls ``transforms.compose`` instead (same value, ARB fast path)."""
         return self.geometry_function()(
@@ -127,7 +128,7 @@ class RadialNoFlow(BuiltinGeometry):
     def geometry_function(self) -> Callable[..., Any]:
         return transforms.radial_bounded_nf
 
-    def geometry_parameters(self) -> Dict[str, float]:
+    def geometry_parameters(self) -> dict[str, float]:
         return {"reD": self.outer_radius}
 
 
@@ -147,7 +148,7 @@ class RadialConstantPressure(BuiltinGeometry):
     def geometry_function(self) -> Callable[..., Any]:
         return transforms.radial_bounded_cp
 
-    def geometry_parameters(self) -> Dict[str, float]:
+    def geometry_parameters(self) -> dict[str, float]:
         return {"reD": self.outer_radius}
 
 
@@ -167,7 +168,7 @@ class LinearInfinite(BuiltinGeometry):
     def geometry_function(self) -> Callable[..., Any]:
         return transforms.linear_inf
 
-    def geometry_parameters(self) -> Dict[str, float]:
+    def geometry_parameters(self) -> dict[str, float]:
         return {"xD": self.distance}
 
 
@@ -187,7 +188,7 @@ class LinearNoFlow(BuiltinGeometry):
     def geometry_function(self) -> Callable[..., Any]:
         return transforms.linear_bounded_nf
 
-    def geometry_parameters(self) -> Dict[str, float]:
+    def geometry_parameters(self) -> dict[str, float]:
         return {"xD": self.distance}
 
 
@@ -207,7 +208,7 @@ class LinearConstantPressure(BuiltinGeometry):
     def geometry_function(self) -> Callable[..., Any]:
         return transforms.linear_bounded_cp
 
-    def geometry_parameters(self) -> Dict[str, float]:
+    def geometry_parameters(self) -> dict[str, float]:
         return {"xD": self.distance}
 
 
@@ -229,7 +230,7 @@ class FractureInfinite(BuiltinGeometry):
     def geometry_function(self) -> Callable[..., Any]:
         return transforms.frac_inf
 
-    def geometry_parameters(self) -> Dict[str, float]:
+    def geometry_parameters(self) -> dict[str, float]:
         return {"xD": self.fracture_position}
 
 
@@ -253,7 +254,7 @@ class FractureNoFlow(BuiltinGeometry):
     def geometry_function(self) -> Callable[..., Any]:
         return transforms.frac_bounded_nf
 
-    def geometry_parameters(self) -> Dict[str, float]:
+    def geometry_parameters(self) -> dict[str, float]:
         return {"reD": self.outer_radius, "xD": self.fracture_position}
 
 
@@ -275,7 +276,7 @@ class FractureConstantPressure(BuiltinGeometry):
     def geometry_function(self) -> Callable[..., Any]:
         return transforms.frac_bounded_cp
 
-    def geometry_parameters(self) -> Dict[str, float]:
+    def geometry_parameters(self) -> dict[str, float]:
         return {"reD": self.outer_radius, "xD": self.fracture_position}
 
 
@@ -306,7 +307,7 @@ class DualPorosity:
 
     def effective_s(self, s: Any) -> Any:
         """The region's effective Laplace variable ``f(s) s``."""
-        return transforms.apply_dual_porosity(s, self.interporosity_flow,
+        return _modifiers.apply_dual_porosity(s, self.interporosity_flow,
                                               self.storativity_ratio)
 
 
@@ -357,14 +358,14 @@ class VariableWellboreStorage:
         _require_in_range("change_rate", self.change_rate, -math.inf, math.inf)
 
 
-Effect = Union[DualPorosity, Skin, WellboreStorage, VariableWellboreStorage]
+Effect = DualPorosity | Skin | WellboreStorage | VariableWellboreStorage
 
 
-def _validate(geometry: Any, effects: Tuple[Any, ...]) -> None:
+def _validate(geometry: Any, effects: tuple[Any, ...]) -> None:
     """Raise TypeError / ValueError for an invalid geometry-effect combination."""
     if not isinstance(geometry, Geometry):
         raise TypeError(f"geometry must be a Geometry, got {geometry!r}")
-    porosity_regions: List[str] = []
+    porosity_regions: list[str] = []
     skin_count = 0
     storage_count = 0
     for effect in effects:
@@ -390,15 +391,15 @@ def _validate(geometry: Any, effects: Tuple[Any, ...]) -> None:
             "at most one wellbore storage effect (WellboreStorage or VariableWellboreStorage)")
 
 
-def _wellbore_effects(effects: Tuple[Effect, ...]) -> transforms.WellboreEffects:
+def _wellbore_effects(effects: tuple[Effect, ...]) -> _modifiers.WellboreEffects:
     """The skin and storage effects of a validated model as one bundle."""
     skin = next((effect.skin for effect in effects if isinstance(effect, Skin)), 0.0)
     storage = next((effect for effect in effects
                     if isinstance(effect, (WellboreStorage, VariableWellboreStorage))), None)
     if isinstance(storage, VariableWellboreStorage):
-        return transforms.WellboreEffects(
+        return _modifiers.WellboreEffects(
             skin, storage.storage, storage.storage_change_ratio, storage.change_rate)
-    return transforms.WellboreEffects(skin, 0.0 if storage is None else storage.storage)
+    return _modifiers.WellboreEffects(skin, 0.0 if storage is None else storage.storage)
 
 
 # ---------------------------------------------------------------------------
@@ -411,12 +412,12 @@ class Model:
     """A geometry composed with region and wellbore effects."""
 
     geometry: Geometry
-    effects: Tuple[Effect, ...]
+    effects: tuple[Effect, ...]
     # Derived once from ``effects`` (the model is frozen); laplace_pressure runs
     # millions of times per inversion.
-    dual_porosity_by_region: Dict[str, DualPorosity] = field(
+    dual_porosity_by_region: dict[str, DualPorosity] = field(
         init=False, repr=False, compare=False)
-    wellbore: transforms.WellboreEffects = field(init=False, repr=False, compare=False)
+    wellbore: _modifiers.WellboreEffects = field(init=False, repr=False, compare=False)
     # True for an unmodified built-in geometry: one transforms.compose call gives
     # the same value as the generic path, plus the ARB fast path. A subclass that
     # adds regions or overrides laplace_pressure takes the generic path.
@@ -500,8 +501,8 @@ class Model:
 
     def hybrid_rate(
         self, time: Any, M: int = 32, *, b: float = 0.5, **gwr_options: Any,
-    ) -> Tuple["np.ndarray[Any, Any]", "np.ndarray[Any, Any]", "np.ndarray[Any, Any]",
-               "np.ndarray[Any, Any]", "np.ndarray[Any, Any]"]:
+    ) -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any], np.ndarray[Any, Any],
+               np.ndarray[Any, Any], np.ndarray[Any, Any]]:
         """``transforms.hybrid_rate`` applied to this model's rate on ``time``."""
         if isinstance(time, Iterable) and not isinstance(time, np.ndarray):
             time = list(time)
@@ -510,14 +511,14 @@ class Model:
         return transforms.hybrid_rate(rate, times, b=b)
 
 
-_OUTPUT_TRANSFORMS: Dict[str, Callable[[Any, Any], Any]] = {
+_OUTPUT_TRANSFORMS: dict[str, Callable[[Any, Any], Any]] = {
     "pressure": transforms.output_pressure,
     "rate": transforms.output_rate,
     "derivative": transforms.output_derivative,
     "cumulative": transforms.output_cumulative,
 }
 
-OUTPUTS: Tuple[str, ...] = tuple(_OUTPUT_TRANSFORMS)
+OUTPUTS: tuple[str, ...] = tuple(_OUTPUT_TRANSFORMS)
 
 
 @dataclass(frozen=True)

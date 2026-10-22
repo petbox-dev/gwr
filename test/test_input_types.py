@@ -12,22 +12,27 @@ from mpmath import mp
 
 from gwr_inversion import gwr
 
+from backend_markers import pins_gmpy2_rounding
+
 REF = np.load(Path(__file__).parent / 'reference_data.npz')
 ATOL = 1e-12
 
 
 class TestInputTypes:
 
+    @pins_gmpy2_rounding
     def test_scalar(self):
         result = float(gwr(lambda s: -mp.log(s) / s - 0.577216 / s, 5.0, 4))
         assert abs(result - float(REF['scalar_result'][0])) < ATOL
 
+    @pins_gmpy2_rounding
     def test_list(self):
         result = [float(v) for v in gwr(
             lambda s: -mp.log(s) / s - 0.577216 / s, [1.0, 5.0, 10.0], 4
         )]
         np.testing.assert_allclose(result, REF['list_result'], atol=ATOL)
 
+    @pins_gmpy2_rounding
     def test_ndarray(self):
         result = np.array([float(v) for v in gwr(
             lambda s: -mp.log(s) / s - 0.577216 / s,

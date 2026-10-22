@@ -7,7 +7,7 @@ precision loops.
 from __future__ import annotations
 
 import math
-from typing import Any, Optional
+from typing import Any
 
 from mpmath import mp
 
@@ -26,7 +26,7 @@ RETRY_GUARD_BITS = 32
 MAX_ATTEMPTS = 8
 
 
-def positive_real(x: Any) -> Optional[Any]:
+def positive_real(x: Any) -> Any | None:
     """
     ``x`` as an mpf (rounded to ``mp.prec``) when it is a finite real number
     greater than zero; None otherwise.

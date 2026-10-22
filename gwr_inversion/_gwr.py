@@ -1,10 +1,11 @@
 """GWR algorithm implementation and public gwr() entry point."""
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from functools import lru_cache
 from inspect import signature
 from math import factorial
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
 from mpmath import mp
@@ -18,7 +19,7 @@ from ._gmpy2 import get_ops, gmpy2_precision
 
 
 @lru_cache(maxsize=16)
-def _gaver_integers(M: int) -> Tuple[List[int], List[List[int]]]:
+def _gaver_integers(M: int) -> tuple[list[int], list[list[int]]]:
     """
     Exact integers of the Gaver functional for ``n = 1..M``: the coefficient
     ``(2n)! / (n ((n-1)!)^2) = n C(2n, n)`` and the binomial row ``C(n, i)``.
@@ -28,7 +29,7 @@ def _gaver_integers(M: int) -> Tuple[List[int], List[List[int]]]:
     # Factorials give n C(2n, n) exactly.
     factorials = [factorial(k) for k in range(2 * M + 1)]
     coefficients = [0] * (M + 1)
-    rows: List[List[int]] = [[1] for _ in range(M + 1)]
+    rows: list[list[int]] = [[1] for _ in range(M + 1)]
     for n in range(1, M + 1):
         coefficients[n] = factorials[2 * n] // (n * factorials[n - 1] ** 2)
         # Pascal's rule: one big-int addition per entry instead of a division.
@@ -50,7 +51,7 @@ def gwr_single(
     time: float,
     M: int,
     precin: int,
-    ops: Dict[str, Callable[..., Any]],
+    ops: dict[str, Callable[..., Any]],
 ) -> Any:
     """
     GWR algorithm for a single time point.
@@ -76,7 +77,7 @@ def gwr_single(
     # fn uses mpmath, so convert tau to mpf for fn calls
     tau_mpf = ops["to_mpf"](tau, precin)
 
-    fni: List[Any] = [0] * (2 * M + 1)
+    fni: list[Any] = [0] * (2 * M + 1)
     for i in range(1, 2 * M + 1):
         s_mpf = i * tau_mpf
         if n_params == 1:
@@ -90,8 +91,8 @@ def gwr_single(
             )
 
     zero = ops["mpf"](0, precin)
-    G0: List[Any] = [zero] * M
-    Gp: List[Any] = [zero] * M
+    G0: list[Any] = [zero] * M
+    Gp: list[Any] = [zero] * M
 
     gaver_coefficients, binomial_rows = _gaver_integers(M)
     M1 = M
@@ -107,14 +108,14 @@ def gwr_single(
 
             G0[n - 1] = tau * gaver_coefficients[n] * s
 
-        except Exception as e:
+        except Exception:
             if n == 1:
-                raise e
+                raise
             M1 = n - 1
             break
 
     best = G0[M1 - 1]
-    Gm: List[Any] = [zero] * M1
+    Gm: list[Any] = [zero] * M1
 
     broken = False
     for k in range(M1 - 1):
@@ -145,10 +146,10 @@ def gwr_single(
 
 
 def _gwr_core(
-    fn: Union[Callable[[float], Any], Callable[[float, int], Any]],
-    time: Union[float, Iterable[float], "np.ndarray[Any, Any]"],
+    fn: Callable[[float], Any] | Callable[[float, int], Any],
+    time: float | Iterable[float] | np.ndarray[Any, Any],
     M: int,
-    precin: Optional[int],
+    precin: int | None,
     backend: str,
     workers: int,
     dtype: str,
@@ -186,8 +187,8 @@ def _gwr_core(
 
 
 def _materialize_time(
-    time: Union[float, Iterable[float], "np.ndarray[Any, Any]"],
-) -> Union[float, List[float], "np.ndarray[Any, Any]"]:
+    time: float | Iterable[float] | np.ndarray[Any, Any],
+) -> float | list[float] | np.ndarray[Any, Any]:
     """
     Time points in the form every later step reads: an Iterable becomes a list
     (a generator would otherwise be consumed by the first evaluation and the
@@ -214,7 +215,7 @@ def _refine_low_signal(
     time: Any,
     result: Any,
     M: int,
-    precin: Optional[int],
+    precin: int | None,
     backend: str,
     workers: int,
     dtype: str,
@@ -259,10 +260,10 @@ def _refine_low_signal(
 
 
 def gwr(
-    fn: Union[Callable[[float], Any], Callable[[float, int], Any]],
-    time: Union[float, Iterable[float], "np.ndarray[Any, Any]"],
+    fn: Callable[[float], Any] | Callable[[float, int], Any],
+    time: float | Iterable[float] | np.ndarray[Any, Any],
     M: int = 32,
-    precin: Optional[int] = None,
+    precin: int | None = None,
     backend: str = "auto",
     workers: int = 1,
     dtype: str = "float",
@@ -321,7 +322,7 @@ def gwr(
 
 def talbot(
     fn: Callable[[float], Any],
-    time: Union[float, Iterable[float], "np.ndarray[Any, Any]"],
+    time: float | Iterable[float] | np.ndarray[Any, Any],
     degree: int = 32,
 ) -> Any:
     """

@@ -6,7 +6,7 @@ evaluate mpf and ARB balls.
 """
 from __future__ import annotations
 
-from typing import Any, NamedTuple, Optional
+from typing import Any, NamedTuple
 
 
 def apply_dual_porosity(s: Any, lam: float, omega: float) -> Any:
@@ -166,7 +166,7 @@ def apply_variable_wbs(psd: Any, s: Any, cD: float, cDd: float,
     return storage_change_factor / (1 / psd + s ** 2 * cD)
 
 
-def effective_s(s: Any, lam: Optional[float], omega: Optional[float]) -> Any:
+def effective_s(s: Any, lam: float | None, omega: float | None) -> Any:
     """
     Step 1 of the compositor: the effective Laplace variable. Dual porosity
     applies when both ``lam`` and ``omega`` are set; otherwise ``s`` itself.
@@ -187,8 +187,8 @@ class WellboreEffects(NamedTuple):
 
     skin: float = 0.0
     storage: float = 0.0
-    storage_change_ratio: Optional[float] = None
-    change_rate: Optional[float] = None
+    storage_change_ratio: float | None = None
+    change_rate: float | None = None
 
     def apply(self, pressure: Any, s: Any) -> Any:
         """Wellbore pressure from the sandface ``pressure`` (mpf or ARB ball) at ``s``."""

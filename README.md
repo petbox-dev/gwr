@@ -343,9 +343,9 @@ mpmath cohen                          256       4.817e+18      0.008
 
 ## References
 
-The method is described in: Valkó, P.P., and Abate J. 2002. Comparison of
+The method is described in: Valkó, P.P., and Abate J. 2004. Comparison of
 Sequence Accelerators for the Gaver Method of Numerical Laplace Transform
-Inversion. *Computers and Mathematics with Applications* **48** (3): 629–636.
+Inversion. *Computers and Mathematics with Applications* **48** (3-4): 629–636.
 <https://doi.org/10.1016/j.camwa.2002.10.017>.
 
 More information on multi-precision inversion can be found in: Valkó, P.P. and

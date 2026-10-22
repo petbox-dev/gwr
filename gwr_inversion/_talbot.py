@@ -1,6 +1,7 @@
 """Fixed Talbot method via mpmath.invertlaplace."""
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from mpmath import invertlaplace
 

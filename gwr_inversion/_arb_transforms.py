@@ -23,7 +23,8 @@ Reached only through ``transforms.compose`` when ``_flint.HAS_FLINT``.
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional
+from collections.abc import Callable
+from typing import Any
 
 from mpmath import mp
 
@@ -101,10 +102,10 @@ def lap_transform(
     s: Any,
     ball_geometry: BallGeometry,
     wellbore: WellboreEffects,
-    lam: Optional[float],
-    omega: Optional[float],
-    geometry_parameters: Dict[str, Any],
-) -> Optional[Any]:
+    lam: float | None,
+    omega: float | None,
+    geometry_parameters: dict[str, Any],
+) -> Any | None:
     """
     ``transforms.compose`` in ball arithmetic. Returns the mpf result, or None
     (``s`` outside ``positive_real``; loop did not converge) so that the

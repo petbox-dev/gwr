@@ -1,6 +1,6 @@
 # Regression tests pin gmpy2 rounding at ATOL 1e-12 and fail on an install without gmpy2
 
-Severity: medium
+Severity: low
 Opened: 2026-10-19
 
 ## What happens now
@@ -12,6 +12,10 @@ Opened: 2026-10-19
 `< 1e-12`). The reference was generated with
 the gmpy2 backend. gmpy2 is an optional dependency (`[fast]`), so
 `pip install gwr-inversion` followed by pytest runs the mpmath backend.
+
+Since 2026-10-21 the 5 tests that fail on mpmath carry
+`pins_gmpy2_rounding` (`test/backend_markers.py`) and skip without gmpy2. They
+still check one backend's rounding at M = 4 and 8, not accuracy.
 
 ## Evidence
 
@@ -43,16 +47,17 @@ Executed in the `/code-fix` run (f9590a2), gmpy2 blocked, same inputs:
 
 ## Blast radius
 
-Anyone running the suite without gmpy2 (CI without the extra, a minimal
-install) sees failures that are not regressions.
+Before the marker: anyone running the suite without gmpy2 saw failures that
+are not regressions. Now: those 5 checks do not run on the mpmath backend at
+all, so an mpmath-path regression at low M would pass unseen there.
 
 ## What would unblock it
 
-Choose one: compare against a high-precision value (`precin=256`) with an
-honest tolerance; or mark the reference tests
-`skipif(not HAS_GMPY2)` and say they pin the gmpy2 backend; or store a
-per-backend reference. Separately decide whether `mp_mpf` should carry the same
-+10 guard bits as `_gmpy2_bits`.
+The skip marker is in place (one of the three options). Still open: replace
+the pinned rounding with a comparison against a high-precision value
+(`precin=256`) at an honest tolerance, or store a per-backend reference, so the
+tests check accuracy on both backends. Separately decide whether `mp_mpf` should
+carry the same guard bits as `_gmpy2_bits`.
 
 ## Files
 
@@ -61,6 +66,5 @@ per-backend reference. Separately decide whether `mp_mpf` should carry the same
 - `gwr_inversion/_gmpy2.py`: `_gmpy2_bits`, `mp_mpf`
 - `test/test_f0_hard.py` also loads `reference_data.npz`; it passes without
   gmpy2 (135 s).
-- `.github/workflows/ci.yml`: the `test-without-optional-dependencies` job
-  excludes the 5 failing tests with `-k`. Remove that expression when this item
-  closes.
+- `test/backend_markers.py`: `pins_gmpy2_rounding`. Remove it from the 5 tests
+  when this item closes.

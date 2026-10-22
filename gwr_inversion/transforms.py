@@ -17,7 +17,8 @@ References
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional, Tuple
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 from mpmath import mp
@@ -25,12 +26,20 @@ from mpmath import mp
 from . import _arb_transforms, _flint
 from ._bessel import (
     bessel_k_over_i as _bessel_k_over_i,
+)
+from ._bessel import (
     besseli as _besseli,
+)
+from ._bessel import (
     besseli0_integral as _besseli0_integral,
+)
+from ._bessel import (
     besselk as _besselk,
+)
+from ._bessel import (
     besselk0_integral as _besselk0_integral,
 )
-from ._modifiers import (  # noqa: F401  (physics modifiers, re-exported)
+from ._modifiers import (
     WellboreEffects,
     apply_dual_porosity,
     apply_skin,
@@ -622,7 +631,7 @@ def output_derivative(pwd: Any, s: Any) -> Any:
 
 # Ball-arithmetic versions of the geometries where they measured faster; used
 # only while ``_flint.HAS_FLINT``. See _arb_transforms for why the others are not here.
-_ARB_GEOMETRIES: Dict[Callable[..., Any], Callable[..., Any]] = {
+_ARB_GEOMETRIES: dict[Callable[..., Any], Callable[..., Any]] = {
     radial_inf: _arb_transforms.radial_inf,
     linear_inf: _arb_transforms.linear_inf,
     linear_bounded_nf: _arb_transforms.linear_bounded_nf,
@@ -634,10 +643,10 @@ def lap_transform(
     s: Any,
     geometry_fn: Callable[..., Any],
     cD: float = 0.0,
-    cDd: Optional[float] = None,
-    aD: Optional[float] = None,
-    lam: Optional[float] = None,
-    omega: Optional[float] = None,
+    cDd: float | None = None,
+    aD: float | None = None,
+    lam: float | None = None,
+    omega: float | None = None,
     skin: float = 0.0,
     **geom_kwargs: Any,
 ) -> Any:
@@ -734,9 +743,9 @@ def compose(
     s: Any,
     geometry_fn: Callable[..., Any],
     wellbore: WellboreEffects,
-    lam: Optional[float],
-    omega: Optional[float],
-    geometry_parameters: Dict[str, Any],
+    lam: float | None,
+    omega: float | None,
+    geometry_parameters: dict[str, Any],
 ) -> Any:
     """
     ``lap_transform`` with the wellbore effects bundled and the geometry
@@ -763,15 +772,15 @@ def compose(
 
 
 def hybrid_rate(
-    qD: "np.ndarray[Any, Any]",
-    time: "np.ndarray[Any, Any]",
+    qD: np.ndarray[Any, Any],
+    time: np.ndarray[Any, Any],
     b: float = 0.5,
-) -> Tuple[
-    "np.ndarray[Any, Any]",
-    "np.ndarray[Any, Any]",
-    "np.ndarray[Any, Any]",
-    "np.ndarray[Any, Any]",
-    "np.ndarray[Any, Any]",
+) -> tuple[
+    np.ndarray[Any, Any],
+    np.ndarray[Any, Any],
+    np.ndarray[Any, Any],
+    np.ndarray[Any, Any],
+    np.ndarray[Any, Any],
 ]:
     """
     Hybrid rate-decline analysis from GWR-inverted dimensionless rate.

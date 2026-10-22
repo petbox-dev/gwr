@@ -7,15 +7,14 @@
 # pypi.org must list this repository, this workflow file (publish.yml) and the
 # "pypi" environment as a trusted publisher.
 #
-# Run it by hand (workflow_dispatch) from a tag, not a branch: the version check
-# below compares the ref name with the version in pyproject.toml.
+# A release is the only trigger. The version check below compares the release
+# tag with the version in pyproject.toml.
 
 name: Publish to PyPI
 
 on:
   release:
     types: [published]
-  workflow_dispatch:
 
 jobs:
   build:
