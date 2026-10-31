@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 from mpmath import mp
 
-from gwr_inversion import gwr, shutdown_pool, transforms
+from gwr_inversion import _flint, gwr, shutdown_pool, transforms
 from gwr_inversion.models import (
     OUTPUTS, RESERVOIR, DualPorosity, EffectiveRadiusSkin, FractureConstantPressure,
     FractureInfinite, FractureNoFlow, Geometry, LaplaceFunction, LinearConstantPressure,
@@ -302,6 +302,22 @@ def test_hybrid_rate_accepts_generator_and_row_vector_time() -> None:
     for time in ((value for value in times), times.reshape(1, -1)):
         for value, expected in zip(model.hybrid_rate(time, 8), reference):
             assert np.array_equal(value, expected)
+
+
+@pytest.mark.skipif(not _flint.HAS_FLINT, reason="python-flint not installed")
+def test_models_on_one_time_grid_share_the_bessel_values_at_sqrt_s() -> None:
+    # every node of the first curve stays cached, so the second model (another
+    # outer radius) evaluates no new order-0/1 Bessel values at sqrt(s)
+    times = list(10 ** np.linspace(-2, 2, 21))
+    M = 7
+    _flint.cache_clear()
+    Model(RadialNoFlow(5.0)).pressure(times, M=M)
+    first = _flint._bessel_order_01_cached.cache_info()
+    assert 0 < first.misses <= 2 * M * len(times)   # nodes can coincide across times
+    Model(RadialNoFlow(50.0)).pressure(times, M=M)
+    second = _flint._bessel_order_01_cached.cache_info()
+    assert second.misses == first.misses
+    assert second.hits > first.hits
 
 
 def test_cache_clear_clears_the_gaver_tables() -> None:

@@ -40,8 +40,9 @@ def _gaver_integers(M: int) -> Tuple[List[int], List[List[int]]]:
 
 
 def cache_clear() -> None:
-    """Clear every internal cache: the order-0/1 Bessel values and the Gaver
-    integer tables (about 54 MB at M = 1024, per process)."""
+    """Clear every internal cache: the order-0/1 Bessel values (up to 4096
+    arguments, about 17 MB at M = 1024) and the Gaver integer tables (about
+    54 MB at M = 1024), per process."""
     _flint.cache_clear()
     _gaver_integers.cache_clear()
 
