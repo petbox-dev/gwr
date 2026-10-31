@@ -53,4 +53,5 @@ Sorted by severity, then oldest first.
 
 | Item | Closed | Settled by |
 |---|---|---|
+| [free-threaded-python-cannot-parallelize-in-threads](closed/free-threaded-python-cannot-parallelize-in-threads.md) | 2026-10-31 | Measured: threads corrupt results through process-global precision; subinterpreters cannot load numpy, gmpy2 or python-flint |
 | [parallel-chunks-ignore-shared-nodes](closed/parallel-chunks-ignore-shared-nodes.md) | 2026-10-31 | Measured: node-aware chunks compute fewer Bessel values but run slower than interleaving |

@@ -8,7 +8,7 @@ version = "2.0.1"
 description = "GWR Algorithm Numerical Laplace Inversion"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.10"
+requires-python = ">=3.12"  # numpy 2.5 needs 3.12
 authors = [
     { name = "David S. Fulford", email = "petbox.dev@gmail.com" },
 ]
@@ -21,8 +21,6 @@ classifiers = [
     "Natural Language :: English",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
@@ -33,8 +31,8 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-    "numpy>=1.21.3",  # first release with Python 3.10 wheels on Linux, Windows and macOS
-    "mpmath>=1.1.0",
+    "numpy>=2.5",
+    "mpmath>=1.2.1",  # 1.1.0 compiles with SyntaxWarnings on 3.12 (`is 0`)
 ]
 
 [project.urls]
@@ -47,7 +45,7 @@ packages = ["gwr_inversion"]
 [project.optional-dependencies]
 fast = ["gmpy2>=2.2.0"]  # 2.2: gmpy2.context(ctx, precision=...)
 flint = ["python-flint>=0.9.0"]
-hybrid = ["scipy>=1.7.2"]  # transforms.hybrid_rate / Model.hybrid_rate (scipy.integrate.simpson)
+hybrid = ["scipy>=1.16.0"]  # hybrid_rate (scipy.integrate.simpson); 1.16 is the first to allow numpy 2.5
 all = ["gwr-inversion[fast,flint,hybrid]"]
 
 [tool.ruff]
@@ -98,7 +96,7 @@ warn_unused_configs = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = ["mpmath", "mpmath.*", "gmpy2", "gmpy2.*", "flint", "flint.*"]
+module = ["mpmath", "mpmath.*", "gmpy2", "gmpy2.*", "flint", "flint.*", "scipy", "scipy.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

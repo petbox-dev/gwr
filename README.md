@@ -48,8 +48,8 @@ pip install "gwr_inversion[hybrid]"      # + scipy: hybrid_rate / Model.hybrid_r
 pip install "gwr_inversion[all]"         # all three
 ```
 
-Python 3.10 or later. The required dependencies are `numpy` and `mpmath`. The
-optional ones are independent and complementary:
+Python 3.12 or later. The required dependencies are `numpy` (2.5 or later) and
+`mpmath`. The optional ones are independent and complementary:
 
 - **gmpy2** (`[fast]`) runs the GWR arithmetic (the Gaver sums and the
   Wynn-rho recursion) in MPFR, and provides a gmpy2 Bessel backend.
@@ -59,6 +59,15 @@ optional ones are independent and complementary:
 - **scipy** (`[hybrid]`) is needed only by `hybrid_rate`.
 
 `[all]` is the recommended install.
+
+**Free-threaded Python** (3.14t, 3.15t) is tested in CI and the GIL stays off
+after import. It brings no speedup here: use `workers` for parallel work, and
+call `gwr` from one thread at a time. mpmath's and python-flint's working
+precision are process-wide settings, so two threads evaluating at once change
+each other's precision. Measured on 3.14t with four threads, up to every value
+of a 126-point table came back wrong; separate processes (`workers`) are
+unaffected. python-flint has no wheel for 3.15t, so there the Bessel functions
+run on gmpy2, about 2.5 times slower.
 
 ## Examples
 
@@ -246,6 +255,15 @@ at x = 100 (M=32) or x = 200 (M=64).
 The fractured-well solutions need `int_0^z K_0(t) dt` and `int_0^z I_0(t) dt`.
 These use closed forms, not quadrature: modified Struve functions as `1F2`
 series for `K_0`, and `z 1F2(1/2; 1, 3/2; z^2/4)` for `I_0`.
+
+## Unreleased
+
+- Python 3.12 or later and numpy 2.5 or later are required. The other floors
+  move with them: mpmath 1.2.1, and scipy 1.16.0 for `[hybrid]` (the first scipy
+  release that allows numpy 2.5).
+- New: `gwr_batch()` and `evaluate()` invert several functions or models on one
+  time grid, sharing the Bessel work between models.
+- CI tests the free-threaded builds 3.14t and 3.15t.
 
 ## Changes in 2.0
 
