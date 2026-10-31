@@ -255,7 +255,7 @@ The fractured-well solutions need `int_0^z K_0(t) dt` and `int_0^z I_0(t) dt`.
 These use closed forms, not quadrature: modified Struve functions as `1F2`
 series for `K_0`, and `z 1F2(1/2; 1, 3/2; z^2/4)` for `I_0`.
 
-## Unreleased
+## Changes in 2.1
 
 - Python 3.12 or later is required (3.10 reached end of life in October 2026).
   The dependency floors are the first releases with Python 3.12 wheels: numpy
@@ -263,6 +263,10 @@ series for `K_0`, and `z 1F2(1/2; 1, 3/2; z^2/4)` for `I_0`.
   releases (numpy 2.5).
 - New: `gwr_batch()` and `evaluate()` invert several functions or models on one
   time grid, sharing the Bessel work between models.
+- The order-0/1 Bessel cache holds every node of a curve (4096 arguments, was
+  32), so models on one time grid that differ only away from the well reuse
+  each other's Bessel values even when called one at a time: 1.6 to 1.9 times
+  faster on a 6 by 21 influence table in one process.
 - CI tests the free-threaded build 3.14t.
 
 ## Changes in 2.0
