@@ -98,7 +98,7 @@ warn_unused_configs = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = ["mpmath", "mpmath.*", "gmpy2", "gmpy2.*", "flint", "flint.*"]
+module = ["mpmath", "mpmath.*", "gmpy2", "gmpy2.*", "flint", "flint.*", "scipy", "scipy.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
