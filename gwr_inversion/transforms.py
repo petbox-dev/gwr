@@ -17,7 +17,7 @@ References
 """
 from __future__ import annotations
 
-import math
+import inspect
 from collections.abc import Callable
 from typing import Any
 
@@ -41,6 +41,7 @@ from ._bessel import (
     besselk0_integral as _besselk0_integral,
 )
 from ._modifiers import (
+    MAX_EFFECTIVE_RADIUS_SKIN,
     WellboreEffects,
     apply_dual_porosity,
     apply_skin,
@@ -647,14 +648,15 @@ _ARB_GEOMETRIES: dict[Callable[..., Any], Callable[..., Any]] = {
 RADIAL_GEOMETRIES: tuple[Callable[..., Any], ...] = (
     radial_inf, radial_bounded_nf, radial_bounded_cp)
 
+# The outer radius each bounded radial geometry uses when reD is omitted, read from
+# its signature: an effective-radius skin must scale that value too (r_eD e^{S}).
+_DEFAULT_OUTER_RADIUS: dict[Callable[..., Any], float] = {
+    geometry: inspect.signature(geometry).parameters["reD"].default
+    for geometry in (radial_bounded_nf, radial_bounded_cp)}
+
+# The values lap_transform accepts for skin_model: S / s added to the sandface
+# pressure, or the geometry evaluated from the effective radius r_w e^{-S}.
 SKIN_MODELS: tuple[str, ...] = ("infinitesimal", "effective_radius")
-
-
-def effective_radius_parameters(parameters: dict[str, Any], skin: float) -> dict[str, Any]:
-    """Geometry parameters seen from the effective radius: ``r_eD' = r_eD e^{S}``."""
-    if "reD" in parameters:
-        return {**parameters, "reD": parameters["reD"] * math.exp(skin)}
-    return parameters
 
 
 def lap_transform(
@@ -775,6 +777,12 @@ def lap_transform(
         raise ValueError(
             "skin_model='effective_radius' applies to radial_inf, radial_bounded_nf and "
             f"radial_bounded_cp, not {getattr(geometry_fn, '__name__', geometry_fn)!r}")
+    if effective_radius:
+        if not abs(skin) <= MAX_EFFECTIVE_RADIUS_SKIN:
+            raise ValueError(f"skin_model='effective_radius' needs |skin| <= "
+                             f"{MAX_EFFECTIVE_RADIUS_SKIN}, got {skin!r}")
+        if geometry_fn in _DEFAULT_OUTER_RADIUS and "reD" not in geom_kwargs:
+            geom_kwargs = {**geom_kwargs, "reD": _DEFAULT_OUTER_RADIUS[geometry_fn]}
     warn_if_unstable(skin, cD, effective_radius)
     return compose(s, geometry_fn, WellboreEffects(skin, cD, cDd, aD, effective_radius),
                    lam, omega, geom_kwargs)
@@ -792,24 +800,22 @@ def compose(
     ``lap_transform`` with the wellbore effects bundled and the geometry
     parameters as a dict; ``models.Model`` builds the bundle once per model.
     """
-    # Effective-radius skin: the geometry at rho^2 s and r_eD / rho, times rho^2.
-    scale = wellbore.geometry_scale()
-    if scale != 1.0:
-        geometry_parameters = effective_radius_parameters(geometry_parameters, wellbore.skin)
-
     # radial_inf and the linear geometries run in ARB ball arithmetic when
     # python-flint is installed (same quantity); others use the mpf code.
     if _flint.HAS_FLINT:
         ball_geometry = _ARB_GEOMETRIES.get(geometry_fn)
         if ball_geometry is not None:
             result = _arb_transforms.lap_transform(
-                s, ball_geometry, wellbore, lam, omega, geometry_parameters, scale)
+                s, ball_geometry, wellbore, lam, omega, geometry_parameters)
             if result is not None:
                 return result
 
-    # 1. Naturally fractured: s -> s_eff;  2. geometry;  3-4. skin, then storage
+    # 1. Naturally fractured: s -> s_eff;  2. geometry;  3-4. skin, then storage.
+    # An effective-radius skin evaluates the geometry at rho^2 s and r_eD / rho, times rho^2.
     s_eff = effective_s(s, lam, omega)
+    scale = wellbore.geometry_scale()
     if scale != 1.0:
+        geometry_parameters = wellbore.geometry_parameters(geometry_parameters)
         pressure = scale * geometry_fn(s * scale, s_eff * scale, **geometry_parameters)
     else:
         pressure = geometry_fn(s, s_eff, **geometry_parameters)

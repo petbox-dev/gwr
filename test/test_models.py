@@ -113,7 +113,8 @@ def test_validation(effects: Any, error: type, message: str) -> None:
 
 
 @pytest.mark.parametrize("geometry", [
-    LinearInfinite(), LinearNoFlow(), FractureInfinite(), FractureNoFlow(),
+    LinearInfinite(), LinearNoFlow(), LinearConstantPressure(), FractureInfinite(),
+    FractureNoFlow(), FractureConstantPressure(),
 ])
 def test_effective_radius_skin_needs_a_radial_geometry(geometry: Any) -> None:
     with pytest.raises(ValueError, match="EffectiveRadiusSkin applies to"):
@@ -144,7 +145,9 @@ def test_negative_skin_with_storage_warns_under_the_infinitesimal_model_only() -
 def test_effective_radius_model_pickles_and_compares() -> None:
     model = Model(RadialNoFlow(50.0), EffectiveRadiusSkin(-1.0), WellboreStorage(5.0))
     assert pickle.loads(pickle.dumps(model)) == model
-    assert model != Model(RadialNoFlow(50.0), Skin(-1.0), WellboreStorage(5.0))
+    with pytest.warns(UserWarning, match="pole"):
+        infinitesimal = Model(RadialNoFlow(50.0), Skin(-1.0), WellboreStorage(5.0))
+    assert model != infinitesimal
 
 
 def test_geometry_type_is_checked() -> None:

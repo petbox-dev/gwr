@@ -14,7 +14,7 @@ well-test definitions of the cited papers.
 - [Inversion](#inversion): [gwr](#gwr), [gwr_batch](#gwr_batch), [talbot](#talbot)
 - [Composable models](#composable-models): [Model](#model), [evaluate](#evaluate), [LaplaceFunction](#laplacefunction), [OUTPUTS](#outputs), [Geometry](#geometry)
 - [Geometries](#geometries): [RadialInfinite](#radialinfinite), [RadialNoFlow](#radialnoflow), [RadialConstantPressure](#radialconstantpressure), [LinearInfinite](#linearinfinite), [LinearNoFlow](#linearnoflow), [LinearConstantPressure](#linearconstantpressure), [FractureInfinite](#fractureinfinite), [FractureNoFlow](#fracturenoflow), [FractureConstantPressure](#fractureconstantpressure)
-- [Effects](#effects): [DualPorosity](#dualporosity), [Skin](#skin), [WellboreStorage](#wellborestorage), [VariableWellboreStorage](#variablewellborestorage)
+- [Effects](#effects): [DualPorosity](#dualporosity), [Skin](#skin), [EffectiveRadiusSkin](#effectiveradiusskin), [WellboreStorage](#wellborestorage), [VariableWellboreStorage](#variablewellborestorage)
 - [Laplace-domain building blocks](#laplace-domain-building-blocks): [lap_transform](#lap_transform), [geometry functions](#geometry-functions), [physics modifiers](#physics-modifiers), [output transforms](#output-transforms)
 - [Rate analysis](#rate-analysis): [hybrid_rate](#hybrid_rate)
 - [Special functions](#special-functions): [besselk / besseli](#besselk--besseli)
@@ -225,7 +225,7 @@ where it approximates the infinite-conductivity fracture (Gringarten et al. 1974
 |---|---|---|---|
 | <a id="dualporosity"></a>`DualPorosity(interporosity_flow, storativity_ratio, region="reservoir")` | λ, ω (Warren and Root 1963, pseudo-steady state) | λ > 0, 0 < ω < 1 | region |
 | <a id="skin"></a>`Skin(skin)` | S, as `psd + S / s` | finite | wellbore |
-| <a id="effectiveradiusskin"></a>`EffectiveRadiusSkin(skin)` | S, as the effective wellbore radius r_w e^{-S} (radial geometries only) | finite | wellbore |
+| <a id="effectiveradiusskin"></a>`EffectiveRadiusSkin(skin)` | S, as the effective wellbore radius r_w e^{-S} (radial geometries only) | \|S\| ≤ 350 (e^{-2S} stays a finite double) | wellbore |
 | <a id="wellborestorage"></a>`WellboreStorage(storage)` | C_D | > 0 | wellbore |
 | <a id="variablewellborestorage"></a>`VariableWellboreStorage(storage, storage_change_ratio, change_rate)` | C_D, C_Dd, a_D (Hegeman et al. 1993) | C_D > 0; others finite | wellbore |
 
@@ -269,9 +269,11 @@ applies to `radial_inf`, `radial_bounded_nf` and `radial_bounded_cp`.
 Raises `ValueError` when only one of `lam`/`omega` or of `cDd`/`aD` is given,
 when `lam <= 0` or `omega` is outside (0, 1), when `cD` is negative or NaN,
 when variable storage is given with `cD = 0`, or when `skin_model` is unknown
-or is `"effective_radius"` with a non-radial geometry. Warns (`UserWarning`)
-for `skin < 0` with `cD > 0` under the infinitesimal model. Geometry parameters
-(`reD`, `xD`) are not checked here; `Model` checks them.
+or is `"effective_radius"` with a non-radial geometry or \|skin\| > 350. Warns
+(`UserWarning`) for `skin < 0` with `cD > 0` under the infinitesimal model.
+Geometry parameters (`reD`, `xD`) are not checked here; `Model` checks them.
+Under `"effective_radius"` an omitted `reD` is the geometry's default, scaled to
+`reD e^{S}` like a given one.
 
 ```python
 from gwr_inversion import gwr, lap_transform, output_rate, radial_bounded_nf
@@ -380,7 +382,7 @@ the current `mp.prec`. Backends in order, each declining what it does not cover:
 
 `cache_clear()` empties the internal caches: the order-0/1 Bessel values and the
 Gaver integer tables, per process. The Bessel cache keeps up to 4096 arguments
-(about 5 MB at M = 32, 17 MB at M = 1024), enough for every node of a curve, so
+(about 5 MiB at M = 32, 17 MiB at M = 1024), enough for every node of a curve, so
 models that share a time grid and differ only away from the well (outer radius,
 boundary, skin, storage) reuse each other's Bessel values at `sqrt(s)`. The
 Gaver tables take about 54 MB at M = 1024.

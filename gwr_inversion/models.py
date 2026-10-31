@@ -26,12 +26,12 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import Any, ClassVar
+from typing import Any, ClassVar, TypeGuard
 
 import numpy as np
 
 from . import _modifiers, transforms
-from ._gwr import gwr
+from ._gwr import _materialize_time, gwr
 
 RESERVOIR = "reservoir"
 
@@ -339,8 +339,9 @@ class EffectiveRadiusSkin:
     level: ClassVar[str] = "wellbore"
 
     def __post_init__(self) -> None:
-        """Reject a non-finite skin."""
-        _require_in_range("skin", self.skin, -math.inf, math.inf)
+        """Reject a skin outside +-MAX_EFFECTIVE_RADIUS_SKIN (rho^2 would overflow a double)."""
+        _require_in_range("skin", self.skin, -_modifiers.MAX_EFFECTIVE_RADIUS_SKIN,
+                          _modifiers.MAX_EFFECTIVE_RADIUS_SKIN)
 
 
 @dataclass(frozen=True)
@@ -382,7 +383,7 @@ Effect = (DualPorosity | Skin | EffectiveRadiusSkin | WellboreStorage
           | VariableWellboreStorage)
 
 
-def _uses_compose(geometry: Geometry) -> bool:
+def _uses_compose(geometry: Geometry) -> TypeGuard[BuiltinGeometry]:
     """True for an unmodified built-in geometry (one ``transforms.compose`` call)."""
     return (isinstance(geometry, BuiltinGeometry)
             and type(geometry).laplace_pressure is BuiltinGeometry.laplace_pressure
@@ -410,7 +411,9 @@ def _validate(geometry: Any, effects: tuple[Any, ...]) -> None:
             skin_count += 1
         elif isinstance(effect, EffectiveRadiusSkin):
             skin_count += 1
-            if not (_uses_compose(geometry) and isinstance(geometry, BuiltinGeometry)
+            # Only transforms.compose applies the effective radius: the generic path
+            # (an overridden laplace_pressure) would drop the skin without a word.
+            if not (_uses_compose(geometry)
                     and geometry.geometry_function() in transforms.RADIAL_GEOMETRIES):
                 raise ValueError(
                     "EffectiveRadiusSkin applies to RadialInfinite, RadialNoFlow and "
@@ -528,8 +531,7 @@ class Model:
             raise ValueError(
                 "derivative() supports dtype='float' only; for mpf output use "
                 "gwr(model.laplace('derivative'), ...) and multiply by t")
-        if isinstance(time, Iterable) and not isinstance(time, np.ndarray):
-            time = list(time)  # read twice: by gwr and by the multiplication below
+        time = _materialize_time(time)  # read twice: by gwr and by the multiplication below
         values = gwr(self.laplace("derivative"), time, M, **gwr_options)
         if isinstance(values, np.ndarray):
             # gwr drops length-1 axes and returns 0-d input as shape (1,); so does ravel
@@ -543,9 +545,9 @@ class Model:
     ) -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any], np.ndarray[Any, Any],
                np.ndarray[Any, Any], np.ndarray[Any, Any]]:
         """``transforms.hybrid_rate`` applied to this model's rate on ``time``."""
-        if isinstance(time, Iterable) and not isinstance(time, np.ndarray):
-            time = list(time)
-        times = np.ravel(np.asarray(time, dtype=np.float64))  # as gwr drops length-1 axes
+        # A generator becomes a list first (np.asarray does not consume one); ravel
+        # as gwr drops length-1 axes.
+        times = np.ravel(np.asarray(_materialize_time(time), dtype=np.float64))
         rate = np.asarray(self.rate(times, M, **gwr_options), dtype=np.float64)
         return transforms.hybrid_rate(rate, times, b=b)
 
@@ -570,7 +572,7 @@ class LaplaceFunction:
 
     def __post_init__(self) -> None:
         """Reject an unknown output here, not at the first evaluation in a worker."""
-        if self.output not in _OUTPUT_TRANSFORMS:
+        if self.output not in OUTPUTS:
             raise ValueError(f"output must be one of {OUTPUTS}, got {self.output!r}")
 
     def __call__(self, s: Any) -> Any:
@@ -602,6 +604,8 @@ def evaluate(
         raise TypeError("evaluate takes a sequence of models; for one model call its "
                         "pressure(), rate(), cumulative() or derivative()")
     model_list = list(models)
+    if not model_list:
+        raise ValueError("evaluate needs at least one model")
     for model in model_list:
         if not isinstance(model, Model):
             raise TypeError(f"evaluate: every item must be a Model, got {model!r}")
@@ -609,13 +613,13 @@ def evaluate(
         raise ValueError(f"output must be one of {OUTPUTS}, got {output!r}")
     if output == "derivative" and gwr_options.get("dtype", "float") != "float":
         raise ValueError("evaluate(..., output='derivative') supports dtype='float' only")
-    if isinstance(time, Iterable) and not isinstance(time, np.ndarray):
-        time = list(time)  # read twice for the derivative: by gwr_batch and by the product
+    time = _materialize_time(time)  # read twice for the derivative: by gwr_batch and the product
     values = gwr_batch([model.laplace(output) for model in model_list], time, M, **gwr_options)
     if output != "derivative":
         return values
     # gwr drops length-1 axes and returns 0-d input as one point; so does ravel.
     # A scalar time gives 1-d values (one per model) and a 0-d ravel.
-    t: np.ndarray[Any, Any] = np.ravel(np.asarray(time, dtype=np.float64))
-    product: np.ndarray[Any, Any] = t * values if values.ndim == 2 else t[0] * values
+    time_points: np.ndarray[Any, Any] = np.ravel(np.asarray(time, dtype=np.float64))
+    product: np.ndarray[Any, Any] = (time_points * values if values.ndim == 2
+                                     else time_points[0] * values)
     return product

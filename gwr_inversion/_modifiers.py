@@ -178,6 +178,11 @@ def effective_s(s: Any, lam: float | None, omega: float | None) -> Any:
     return s
 
 
+# |S| beyond this overflows (S < 0) or underflows (S > 0) the double rho^2 = e^{-2S};
+# a physical skin is a few tens at most.
+MAX_EFFECTIVE_RADIUS_SKIN = 350.0
+
+
 def effective_radius_scale(skin: float) -> float:
     """
     The factor ``rho^2 = e^{-2S}`` that turns a radial geometry into the same
@@ -205,15 +210,18 @@ def warn_if_unstable(skin: float, storage: float, effective_radius: bool = False
     """
     Warn when the infinitesimal skin ``S / s`` with ``S < 0`` is composed with
     wellbore storage: ``1 + C_D s^2 p_S(s)`` then has a zero at some ``s* > 0``,
-    the exact inverse grows as ``e^{s* t}``, and a numerical inversion returns
-    neither that nor a physical curve. Use the effective-radius skin instead
-    (docs/wellbore-storage-real-domain.md, section 7).
+    and the exact inverse grows as ``e^{s* t}``. A numerical inversion returns
+    either the stable branch-cut part alone (small |S|: a physical-looking curve
+    that is not the inverse) or the growing solution until the Gaver sequence
+    fails. Use the effective-radius skin instead (docs/wellbore-storage-real-domain.md,
+    section 7).
     """
     if skin < 0 and storage > 0 and not effective_radius:
         warnings.warn(
             f"skin {skin!r} < 0 composed with wellbore storage {storage!r} as S/s puts a "
-            "pole of p_wD on the positive real axis; the result is not the inverse of the "
-            "transform. Use the effective-radius skin (EffectiveRadiusSkin / "
+            "pole of p_wD on the positive real axis: the exact inverse grows without bound, "
+            "and the inversion returns either a curve that is not the inverse or that "
+            "growth until it fails. Use the effective-radius skin (EffectiveRadiusSkin / "
             "skin_model='effective_radius') for a stimulated well with storage.",
             stacklevel=3)
 
@@ -240,6 +248,13 @@ class WellboreEffects(NamedTuple):
         if self.effective_radius and self.skin != 0:
             return effective_radius_scale(self.skin)
         return 1.0
+
+    def geometry_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:
+        """The geometry ``parameters`` seen from the effective radius, ``r_eD' = r_eD e^{S}``
+        (the other half of ``geometry_scale``); unchanged without an effective-radius skin."""
+        if self.effective_radius and self.skin != 0 and "reD" in parameters:
+            return {**parameters, "reD": parameters["reD"] * math.exp(self.skin)}
+        return parameters
 
     def apply(self, pressure: Any, s: Any) -> Any:
         """Wellbore pressure from the sandface ``pressure`` (mpf or ARB ball) at ``s``."""

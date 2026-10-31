@@ -9,8 +9,8 @@ import pytest
 from mpmath import mp
 
 from gwr_inversion import (
-    Model, RadialInfinite, RadialNoFlow, Skin, WellboreStorage, _flint, evaluate, gwr,
-    gwr_batch, shutdown_pool,
+    HAS_GMPY2, Model, RadialInfinite, RadialNoFlow, Skin, WellboreStorage, _flint, _parallel,
+    evaluate, gwr, gwr_batch, shutdown_pool,
 )
 
 TIMES = [0.01, 0.1, 1.0, 10.0, 100.0]
@@ -68,6 +68,49 @@ def test_scalar_and_zero_dimensional_time() -> None:
     zero_d = gwr_batch([_exponential, _ln], np.array(1.0), M)
     assert zero_d.shape == (2, 1)
     assert np.array_equal(zero_d[:, 0], scalar)
+
+
+_BACKENDS = ["mpmath"] + (["gmpy2"] if HAS_GMPY2 else [])
+
+
+@pytest.mark.parametrize("options", [
+    *({"backend": backend} for backend in _BACKENDS),
+    {"precin": 30},
+    {"refine": True, "dtype": "mpf"},
+    {"refine": True, "precin": 20},
+])
+def test_rows_are_bit_identical_to_gwr_for_each_option(options: dict[str, Any]) -> None:
+    fns = [_exponential, _ln]
+    times = list(np.linspace(0.5, 12.0, 6))   # e^-t falls below 1e-4 of its peak: refine acts
+    batch = gwr_batch(fns, times, M, **options)
+    assert _rows_equal(batch, [gwr(fn, times, M, **options) for fn in fns])
+
+
+def test_generator_and_row_vector_time_are_read_like_gwr() -> None:
+    expected = gwr_batch([_exponential, _ln], TIMES, M)
+    assert np.array_equal(gwr_batch([_exponential, _ln], (t for t in TIMES), M), expected)
+    assert np.array_equal(gwr_batch([_exponential, _ln], np.array([TIMES]), M), expected)
+
+
+def test_one_point_never_starts_the_pool() -> None:
+    shutdown_pool()
+    scalar = gwr_batch([_exponential, _ln], 1.0, M, workers=2)
+    zero_d = gwr_batch([_exponential, _ln], np.array(1.0), M, workers=2)
+    assert _parallel._pool is None
+    assert np.array_equal(zero_d[:, 0], scalar)
+
+
+def test_parallel_refine_and_pool_reuse() -> None:
+    times = list(np.linspace(0.5, 12.0, 6))
+    try:
+        first = gwr(_exponential, times, M, workers=2, refine=True)
+        pool = _parallel._pool
+        batch = gwr_batch([_exponential, _ln], times, M, workers=2, refine=True)
+        assert pool is not None and _parallel._pool is pool   # gwr and gwr_batch share it
+    finally:
+        shutdown_pool()
+    assert np.array_equal(batch[0], first)
+    assert np.array_equal(batch[1], gwr(_ln, times, M, refine=True))
 
 
 def test_parallel_rows_are_bit_identical_to_sequential() -> None:
@@ -143,6 +186,7 @@ def test_evaluate_in_parallel_matches_sequential() -> None:
 @pytest.mark.parametrize("models, output, options, error, message", [
     (Model(RadialInfinite()), "pressure", {}, TypeError, "sequence of models"),
     (["not a model"], "pressure", {}, TypeError, "must be a Model"),
+    ([], "pressure", {}, ValueError, "evaluate needs at least one model"),
     (_models(), "hybrid_rate", {}, ValueError, "output must be one of"),
     (_models(), "derivative", {"dtype": "mpf"}, ValueError, "dtype='float' only"),
 ])

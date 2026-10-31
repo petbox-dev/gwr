@@ -256,7 +256,9 @@ def test_negative_skin_with_storage_has_a_real_positive_pole() -> None:
     assert rel(pole, 0.145259977) < 1e-8
     assert rel(amplitude, 0.4456344762) < 1e-8
     times = [1e-2, 1.0, 10.0]
-    computed = model(RadialInfinite(), skin, storage).pressure(times, M=32)
+    with pytest.warns(UserWarning, match="pole"):
+        unstable = model(RadialInfinite(), skin, storage)
+    computed = unstable.pressure(times, M=32)
     for t, value in zip(times, computed):
         integral, _ = radial_branch_cut_integral(t, storage, skin)
         # the integral alone fixes p_wD(0) = 0, so the pole enters as a (e^{s* t} - 1)
@@ -300,6 +302,65 @@ def test_effective_radius_skin_rescales_bounded_geometries(geometry: Any, skin: 
         assert rel(value, reference) < 1e-14
 
 
+@pytest.mark.parametrize("skin", [-1.0, 2.0])
+def test_effective_radius_skin_has_the_pseudo_steady_state_slope(skin: float) -> None:
+    # independent of the scaling identity: late-time dp/dt = 2 / (r_eD^2 - r_wD'^2), the
+    # pore volume between the effective well radius e^{-S} and the no-flow boundary
+    outer = 20.0
+    model = Model(RadialNoFlow(outer), EffectiveRadiusSkin(skin))
+    early, late = model.pressure([1e4, 2e4], M=32)
+    assert rel((late - early) / 1e4, 2 / (outer**2 - math.exp(-2 * skin))) < 1e-10
+
+
+@pytest.mark.parametrize("geometry_name", ["radial_bounded_nf", "radial_bounded_cp"])
+def test_effective_radius_skin_scales_the_default_outer_radius(geometry_name: str) -> None:
+    from gwr_inversion import transforms
+    geometry = getattr(transforms, geometry_name)
+    s = mp.mpf("0.001")
+    omitted = transforms.lap_transform(s, geometry, skin=3.0, skin_model="effective_radius")
+    explicit = transforms.lap_transform(s, geometry, skin=3.0, skin_model="effective_radius",
+                                        reD=1000.0)
+    assert omitted == explicit
+
+
+@pytest.mark.parametrize("arguments, message", [
+    ({"geometry_fn": "radial_inf", "skin_model": "thin"}, "skin_model must be one of"),
+    ({"geometry_fn": "linear_inf", "skin_model": "effective_radius"}, "applies to radial_inf"),
+    ({"geometry_fn": "radial_inf", "skin_model": "effective_radius", "skin": 400.0},
+     "needs [|]skin[|] <="),
+])
+def test_lap_transform_rejects_a_bad_skin_model(arguments: dict[str, Any], message: str) -> None:
+    from gwr_inversion import transforms
+    arguments = {**arguments, "geometry_fn": getattr(transforms, arguments["geometry_fn"])}
+    with pytest.raises(ValueError, match=message):
+        transforms.lap_transform(mp.mpf("0.37"), **arguments)
+
+
+def test_effective_radius_skin_rejects_a_skin_that_overflows_rho() -> None:
+    with pytest.raises(ValueError, match="skin must be finite and in"):
+        EffectiveRadiusSkin(-400.0)
+    EffectiveRadiusSkin(-350.0)
+
+
+def test_effective_radius_skin_with_dual_porosity_on_the_arb_path() -> None:
+    from gwr_inversion import _arb_transforms, _flint, transforms
+    from gwr_inversion._modifiers import WellboreEffects
+    if not _flint.HAS_FLINT:
+        pytest.skip("python-flint not installed: there is no ARB path to compare")
+    wellbore = WellboreEffects(-2.0, 10.0, effective_radius=True)
+    for s in (mp.mpf("0.001"), mp.mpf("7.5"), mp.mpf(900)):
+        ball = _arb_transforms.lap_transform(
+            s, transforms._ARB_GEOMETRIES[transforms.radial_inf], wellbore, 1e-3, 0.2, {})
+        assert ball is not None
+        had_flint = _flint.HAS_FLINT
+        _flint.HAS_FLINT = False
+        try:
+            plain = transforms.compose(s, transforms.radial_inf, wellbore, 1e-3, 0.2, {})
+        finally:
+            _flint.HAS_FLINT = had_flint
+        assert rel(ball, plain) < 1e-25
+
+
 def test_skin_models_agree_at_late_time_without_storage() -> None:
     # both reduce to the ln(r_w') shift once the well radius no longer matters
     t = 1e8
@@ -310,8 +371,17 @@ def test_skin_models_agree_at_late_time_without_storage() -> None:
 
 
 def test_effective_radius_skin_matches_on_both_compositor_paths() -> None:
-    from gwr_inversion import _flint, transforms
+    from gwr_inversion import _arb_transforms, _flint, transforms
+    from gwr_inversion._modifiers import WellboreEffects
+    if not _flint.HAS_FLINT:
+        pytest.skip("python-flint not installed: there is no ARB path to compare")
     s = mp.mpf("0.37")
+    # The ARB compositor must answer itself (None would mean the mpf fallback,
+    # and the comparison below would compare the mpf path with itself).
+    ball = _arb_transforms.lap_transform(
+        s, transforms._ARB_GEOMETRIES[transforms.radial_inf],
+        WellboreEffects(-2.0, 10.0, effective_radius=True), None, None, {})
+    assert ball is not None
     with_arb = transforms.lap_transform(s, transforms.radial_inf, cD=10.0, skin=-2.0,
                                         skin_model="effective_radius")
     had_flint = _flint.HAS_FLINT

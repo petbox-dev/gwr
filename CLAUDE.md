@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `gwr-inversion` — Python package for numerical inversion of Laplace transforms. Implements the Gaver-Wynn-Rho algorithm (Valkó & Abate, 2004) and wraps mpmath's Fixed Talbot method.
 
-Public API: `gwr(fn, time, M=32, precin=None, backend="auto", workers=1, dtype="float", refine=False, refine_threshold=1e-4)`, `gwr_batch(fns, time, ...)` (several functions on one grid, rows bit-identical to `gwr`), `talbot(fn, time, degree=32)`, `besselk(n, x)`, `besseli(n, x)`, `Model(geometry, *effects)` and `evaluate(models, time, output, M)` (see `models.py`).
+Public API: `gwr(fn, time, M=32, precin=None, backend="auto", workers=1, dtype="float", refine=False, refine_threshold=1e-4)`, `gwr_batch(fns, time, ...)` (several functions on one grid, rows bit-identical to `gwr`), `talbot(fn, time, degree=32)`, `besselk(n, x)`, `besseli(n, x)`, `Model(geometry, *effects)` and `evaluate(models, time, output="pressure", M=32, **gwr_options)` (see `models.py`).
 
 ## Build & Install
 
@@ -62,7 +62,7 @@ gwr_inversion/
 - **`_gwr.py`** — `gwr_single(fn, time, M, precin, ops)` implements the GWR algorithm for one time point using the ops dict. User's `fn` always receives mpmath types; backend conversion happens transparently.
 - **`_parallel.py`** — `parallel_gwr()` / `parallel_gwr_batch()` (via `_map_interleaved`) dispatch one interleaved chunk of time points per worker; the batch worker evaluates every function at a time before the next (time-major, so they share that time's Bessel nodes through the order-0/1 cache) to a persistent `ProcessPoolExecutor` (created on first use, reused while the pool size `min(workers, cpu_count)` is unchanged, `shutdown_pool()` / atexit to release). Requires picklable `fn` (module-level functions, not lambdas).
 - **`_arb_transforms.py`** — `lap_transform` with `radial_inf` or a linear geometry runs entirely in ARB balls (one conversion in, one out). Bounded radial and fractured geometries stay on the mpf path (measured no gain in ARB); their outer boundary enters through `_bessel.bessel_k_over_i`, evaluated only to the bits it contributes.
-- **`_modifiers.py`** — `apply_dual_porosity`, `apply_skin`, `apply_wbs`, `apply_variable_wbs`, `effective_s` (step 1) and `WellboreEffects` (skin then storage, steps 3-4). Plain `+ - * / **`, so the mpf compositor, the ARB compositor and the generic `Model` path share one copy; `transforms` re-exports them.
+- **`_modifiers.py`** — `apply_dual_porosity`, `apply_skin`, `apply_wbs`, `apply_variable_wbs`, `effective_s` (step 1), `effective_radius_scale` / `warn_if_unstable` (effective-radius skin; S<0 with storage), and `WellboreEffects` (skin then storage, steps 3-4; with an effective-radius skin it also owns the geometry's `geometry_scale` / `geometry_parameters`). Plain `+ - * / **`, so the mpf compositor, the ARB compositor and the generic `Model` path share one copy; `transforms` re-exports them.
 - **`models.py`** — `Model(geometry, *effects)` frozen dataclass; geometries declare `regions`; effects have a level (region: `DualPorosity`; wellbore: `Skin`, `EffectiveRadiusSkin`, `WellboreStorage`, `VariableWellboreStorage`). Built-in geometries delegate to `transforms.compose` (keeps the ARB path; the `WellboreEffects` bundle is built once per model); user `Geometry` subclasses use the generic path. `model.laplace(output)` returns a picklable `LaplaceFunction`.
 - **`_talbot.py`** — Thin wrapper around `mpmath.invertlaplace(method='talbot')`.
 

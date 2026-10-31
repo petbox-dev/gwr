@@ -48,6 +48,7 @@ Sorted by severity, then oldest first.
 | [sdist-tests-cannot-run](open/sdist-tests-cannot-run.md) | 2026-10-21 | low | The sdist ships test modules but not reference_data.npz, so its tests fail at collection |
 | [package-has-no-py-typed-marker](open/package-has-no-py-typed-marker.md) | 2026-10-21 | low | Fully annotated package ships no py.typed, so users' type checkers see it as untyped |
 | [geometry-defaults-repeated-in-models-and-transforms](open/geometry-defaults-repeated-in-models-and-transforms.md) | 2026-10-21 | low | 0.732, 100 and 1000 defaults are written in both modules with nothing keeping them equal |
+| [wbs-doc-accuracy-rows-not-pinned-by-tests](open/wbs-doc-accuracy-rows-not-pinned-by-tests.md) | 2026-10-31 | low | The wellbore-storage doc's section 6 table cites parameter ranges the tests do not assert |
 
 ## Done
 

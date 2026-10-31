@@ -47,6 +47,9 @@ except ImportError:
 # a cache that holds every node of one curve (2M per time point) lets the next
 # model reuse them all: 1.6-1.9x on a 6 x 21 influence table, single process.
 # One entry is about 1.3 kB at M = 32 and 4.4 kB at M = 1024 (5 and 17 MiB full).
+# The sharing needs 2M entries per distinct set of arguments at a time (a dual-
+# porosity model and a plain one are two sets); past 4096 the LRU evicts before reuse.
+# Counterparts quoting 4096 and the sizes: _gwr.cache_clear, docs/api.md, README.md.
 _ORDER_01_CACHE_SIZE = 4096
 
 # A deficit larger than this is treated as "no finite bound" (rel_accuracy_bits

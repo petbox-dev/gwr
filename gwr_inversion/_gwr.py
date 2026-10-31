@@ -40,9 +40,10 @@ def _gaver_integers(M: int) -> tuple[list[int], list[list[int]]]:
 
 
 def cache_clear() -> None:
-    """Clear every internal cache: the order-0/1 Bessel values (up to 4096
-    arguments, about 17 MB at M = 1024) and the Gaver integer tables (about
-    54 MB at M = 1024), per process."""
+    """Clear every internal cache: the order-0/1 Bessel values (up to
+    ``_flint._ORDER_01_CACHE_SIZE`` = 4096 arguments, about 5 MiB at M = 32 and
+    17 MiB at M = 1024) and the Gaver integer tables (about 54 MB at M = 1024),
+    per process."""
     _flint.cache_clear()
     _gaver_integers.cache_clear()
 
@@ -146,6 +147,22 @@ def gwr_single(
 # ---------------------------------------------------------------------------
 
 
+def _precision_digits(M: int, precin: int | None) -> int:
+    """Decimal digits of working precision (mp.dps and the backend context):
+    ``precin``, or about 2.1 M, which GWR needs at M terms."""
+    return round(21 * M / 10) if precin is None else precin
+
+
+def _time_points(time: Iterable[Any]) -> tuple[list[Any], bool]:
+    """
+    The points of a materialized, non-scalar ``time`` (``_materialize_time``)
+    and whether it is one point that never goes to the pool: a 0-d array.
+    """
+    if isinstance(time, np.ndarray) and time.ndim < 1:
+        return [time.item()], True
+    return list(time), False
+
+
 def _gwr_core(
     fn: Callable[[float], Any] | Callable[[float, int], Any],
     time: float | Iterable[float] | np.ndarray[Any, Any],
@@ -156,8 +173,7 @@ def _gwr_core(
     dtype: str,
 ) -> Any:
     """Core GWR evaluation without refinement."""
-    # Decimal digits of working precision (mp.dps and the backend context).
-    precision_digits = round(21 * M / 10) if precin is None else precin
+    precision_digits = _precision_digits(M, precin)
     ops = get_ops(backend)
 
     with mp.workdps(precision_digits), gmpy2_precision(precision_digits):
@@ -167,14 +183,8 @@ def _gwr_core(
             return float(value) if dtype == "float" else value
 
         is_array = isinstance(time, np.ndarray)
-        parallel = workers > 1
-        if isinstance(time, np.ndarray) and time.ndim < 1:
-            time = [time.item()]
-            parallel = False
-
-        # ndarray, list or other Iterable
-        times = list(time)
-        if parallel:
+        times, single_point = _time_points(time)
+        if workers > 1 and not single_point:
             from ._parallel import parallel_gwr
             results = parallel_gwr(fn, times, M, precision_digits, backend, workers)
         else:
@@ -245,7 +255,7 @@ def _refine_low_signal(
                     in zip(np.atleast_1d(np.asarray(time, dtype=object)), mask) if refine_point]
     M_high = 2 * M
     # GWR needs about 2.1 M digits; an explicit precin sized for M is too few for 2 M.
-    precin_high = None if precin is None else max(precin, round(21 * M_high / 10))
+    precin_high = None if precin is None else max(precin, _precision_digits(M_high, None))
     refined = _gwr_core(fn, refine_times, M_high, precin_high, backend, workers, dtype)
 
     # Merge refined values back
@@ -376,22 +386,16 @@ def gwr_batch(
         raise ValueError(f"dtype must be 'float' or 'mpf', got {dtype!r}")
     functions = _validate_functions(fns)
     time = _materialize_time(time)
-    # Same rules as _gwr_core: a scalar or a 0-d array is one point and never
-    # goes to the pool.
-    scalar = False
-    single_point = True
-    if isinstance(time, np.ndarray):
-        times: list[Any] = [time.item()] if time.ndim < 1 else list(time)
-        single_point = time.ndim < 1
-    elif isinstance(time, list):
-        times = time
-        single_point = False
+    # As in _gwr_core: a scalar or a 0-d array is one point and never goes to
+    # the pool; only a scalar returns one value per function.
+    if isinstance(time, Iterable):
+        times, single_point = _time_points(time)
+        scalar = False
     else:
-        times = [time]
-        scalar = True
+        times, single_point, scalar = [time], True, True
     parallel = workers > 1 and not single_point
 
-    precision_digits = round(21 * M / 10) if precin is None else precin
+    precision_digits = _precision_digits(M, precin)
     ops = get_ops(backend)
     with mp.workdps(precision_digits), gmpy2_precision(precision_digits):
         if parallel:

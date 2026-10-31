@@ -63,7 +63,7 @@ jobs:
 
   test-free-threaded:
     # The free-threaded build (PEP 703). The check after installing fails if any
-    # dependency re-enabled the GIL on import. gwr_inversion is not thread-safe:
+    # dependency re-enabled the GIL on import (scipy too: the package imports it lazily). gwr_inversion is not thread-safe:
     # mpmath's and python-flint's precision are process-global, so parallel
     # evaluation stays in processes (README, "Free-threaded Python").
     name: test (ubuntu-latest, Python 3.14t, free-threaded)
@@ -80,7 +80,7 @@ jobs:
           python -m pip install --only-binary=numpy,scipy,gmpy2,python-flint -e ".[all]" pytest
       - name: Check the build is free-threaded, the GIL stays off and the fast backends load
         run: >-
-          python -c "import sys, sysconfig, gwr_inversion as g;
+          python -c "import sys, sysconfig, gwr_inversion as g, scipy;
           assert sysconfig.get_config_var('Py_GIL_DISABLED'), 'not a free-threaded build';
           assert not sys._is_gil_enabled(), 'an import re-enabled the GIL';
           print('gmpy2', g.HAS_GMPY2, 'flint', g.HAS_FLINT);

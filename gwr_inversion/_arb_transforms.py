@@ -105,14 +105,13 @@ def lap_transform(
     lam: float | None,
     omega: float | None,
     geometry_parameters: dict[str, Any],
-    scale: float = 1.0,
 ) -> Any | None:
     """
     ``transforms.compose`` in ball arithmetic. Returns the mpf result, or None
     (``s`` outside ``positive_real``; loop did not converge) so that the
-    caller falls back to the mpf code. ``scale`` is ``rho^2`` of an
-    effective-radius skin (``geometry_parameters`` already scaled): the
-    geometry is evaluated at ``rho^2 s`` and multiplied by ``rho^2``.
+    caller falls back to the mpf code. An effective-radius skin is applied as on
+    the mpf path: the geometry at ``rho^2 s`` with ``wellbore.geometry_parameters``,
+    times ``rho^2`` (``rho^2 = wellbore.geometry_scale()``).
     """
     s_mpf = positive_real(s)
     if s_mpf is None:
@@ -121,8 +120,11 @@ def lap_transform(
     target_bits = mp.prec + TARGET_GUARD_BITS
     working_bits = target_bits + INITIAL_GUARD_BITS
     s_arb = _flint.mpf_to_arb(s_mpf)
+    scale = wellbore.geometry_scale()
+    geometry_parameters = wellbore.geometry_parameters(geometry_parameters)
+    # A zero-radius ball at any precision: the double that approximates rho^2 (the
+    # same double the mpf path multiplies by), lifted without rounding.
     scale_arb = None if scale == 1.0 else _flint.mpf_to_arb(mp.mpf(scale))
-    s_geometry = s_arb if scale_arb is None else s_arb * scale_arb
 
     def s_eff() -> Any:
         value = effective_s(s_arb, lam, omega)
@@ -131,6 +133,9 @@ def lap_transform(
     for _ in range(MAX_ATTEMPTS):
         try:
             with _flint.flint_context.workprec(working_bits):
+                # rho^2 s inside the working precision: a product formed outside
+                # rounds to the ambient 53 bits and the loop can never converge.
+                s_geometry = s_arb if scale_arb is None else s_arb * scale_arb
                 pressure = ball_geometry(s_geometry, s_eff, **geometry_parameters)
                 if scale_arb is not None:
                     pressure = pressure * scale_arb
