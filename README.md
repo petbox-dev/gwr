@@ -48,8 +48,8 @@ pip install "gwr_inversion[hybrid]"      # + scipy: hybrid_rate / Model.hybrid_r
 pip install "gwr_inversion[all]"         # all three
 ```
 
-Python 3.12 or later. The required dependencies are `numpy` (2.5 or later) and
-`mpmath`. The optional ones are independent and complementary:
+Python 3.12 or later. The required dependencies are `numpy` (1.26 or later;
+tested through 2.5) and `mpmath`. The optional ones are independent and complementary:
 
 - **gmpy2** (`[fast]`) runs the GWR arithmetic (the Gaver sums and the
   Wynn-rho recursion) in MPFR, and provides a gmpy2 Bessel backend.
@@ -257,9 +257,10 @@ series for `K_0`, and `z 1F2(1/2; 1, 3/2; z^2/4)` for `I_0`.
 
 ## Unreleased
 
-- Python 3.12 or later and numpy 2.5 or later are required. The other floors
-  move with them: mpmath 1.2.1, and scipy 1.16.0 for `[hybrid]` (the first scipy
-  release that allows numpy 2.5).
+- Python 3.12 or later is required (3.10 reached end of life in October 2026).
+  The dependency floors are the first releases with Python 3.12 wheels: numpy
+  1.26, scipy 1.11.2 for `[hybrid]`, and mpmath 1.2.1. CI also tests the latest
+  releases (numpy 2.5).
 - New: `gwr_batch()` and `evaluate()` invert several functions or models on one
   time grid, sharing the Bessel work between models.
 - CI tests the free-threaded build 3.14t.

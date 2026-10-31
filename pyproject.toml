@@ -8,7 +8,7 @@ version = "2.0.1"
 description = "GWR Algorithm Numerical Laplace Inversion"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.12"  # numpy 2.5 needs 3.12
+requires-python = ">=3.12"
 authors = [
     { name = "David S. Fulford", email = "petbox.dev@gmail.com" },
 ]
@@ -30,7 +30,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-    "numpy>=2.5",
+    "numpy>=1.26.0",  # first release with Python 3.12 wheels; CI also tests the latest
     "mpmath>=1.2.1",  # 1.1.0 compiles with SyntaxWarnings on 3.12 (`is 0`)
 ]
 
@@ -44,7 +44,7 @@ packages = ["gwr_inversion"]
 [project.optional-dependencies]
 fast = ["gmpy2>=2.2.0"]  # 2.2: gmpy2.context(ctx, precision=...)
 flint = ["python-flint>=0.9.0"]
-hybrid = ["scipy>=1.16.0"]  # hybrid_rate (scipy.integrate.simpson); 1.16 is the first to allow numpy 2.5
+hybrid = ["scipy>=1.11.2"]  # hybrid_rate (scipy.integrate.simpson); first release with 3.12 wheels
 all = ["gwr-inversion[fast,flint,hybrid]"]
 
 [tool.ruff]

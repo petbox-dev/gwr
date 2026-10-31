@@ -18,7 +18,7 @@ pip install -e ".[hybrid]" # scipy: needed by hybrid_rate / Model.hybrid_rate
 pip install -e ".[all]"    # all three
 ```
 
-Dependencies: `numpy>=2.5`, `mpmath>=1.2.1`. Optional: `gmpy2>=2.2.0`, `python-flint>=0.9.0`, `scipy>=1.16.0` (floors tested by the `minimum-versions` CI job). Requires Python >=3.12 (numpy 2.5 needs it). Free-threaded 3.14t is tested (`test-free-threaded`); the package is not thread-safe (mpmath and python-flint precision are process-global), so parallelism stays in processes. CI: `.github/workflows/ci.yml`.
+Dependencies: `numpy>=1.26.0`, `mpmath>=1.2.1`. Optional: `gmpy2>=2.2.0`, `python-flint>=0.9.0`, `scipy>=1.11.2` (floors: first releases with Python 3.12 wheels, tested by the `minimum-versions` CI job; the main matrix tests the latest releases). Requires Python >=3.12 (3.10 is end of life; numpy and python-flint set no higher floor). Free-threaded 3.14t is tested (`test-free-threaded`); the package is not thread-safe (mpmath and python-flint precision are process-global), so parallelism stays in processes. CI: `.github/workflows/ci.yml`.
 
 ## Testing
 
