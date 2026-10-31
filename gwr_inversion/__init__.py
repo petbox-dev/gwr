@@ -15,6 +15,7 @@ from ._parallel import shutdown_pool
 from .models import (
     OUTPUTS,
     DualPorosity,
+    EffectiveRadiusSkin,
     FractureConstantPressure,
     FractureInfinite,
     FractureNoFlow,
