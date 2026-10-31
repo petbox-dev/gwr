@@ -60,14 +60,13 @@ Python 3.12 or later. The required dependencies are `numpy` (2.5 or later) and
 
 `[all]` is the recommended install.
 
-**Free-threaded Python** (3.14t, 3.15t) is tested in CI and the GIL stays off
-after import. It brings no speedup here: use `workers` for parallel work, and
+**Free-threaded Python** (3.14t) is tested in CI and the GIL stays off after
+import. It brings no speedup here: use `workers` for parallel work, and
 call `gwr` from one thread at a time. mpmath's and python-flint's working
 precision are process-wide settings, so two threads evaluating at once change
-each other's precision. Measured on 3.14t with four threads, up to every value
-of a 126-point table came back wrong; separate processes (`workers`) are
-unaffected. python-flint has no wheel for 3.15t, so there the Bessel functions
-run on gmpy2, about 2.5 times slower.
+each other's precision. Measured on 3.14t with four threads, up to 17 of the
+126 values of a table came back wrong, by as much as 0.13%; separate processes
+(`workers`) are unaffected.
 
 ## Examples
 
@@ -263,7 +262,7 @@ series for `K_0`, and `z 1F2(1/2; 1, 3/2; z^2/4)` for `I_0`.
   release that allows numpy 2.5).
 - New: `gwr_batch()` and `evaluate()` invert several functions or models on one
   time grid, sharing the Bessel work between models.
-- CI tests the free-threaded builds 3.14t and 3.15t.
+- CI tests the free-threaded build 3.14t.
 
 ## Changes in 2.0
 

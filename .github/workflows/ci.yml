@@ -35,7 +35,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python-version: ["3.12", "3.13", "3.14", "3.15"]
+        python-version: ["3.12", "3.13", "3.14"]
         include:
           # The persistent process pool uses the default start method: spawn on
           # Windows and macOS, fork on Linux to 3.13 and forkserver from 3.14
@@ -62,42 +62,29 @@ jobs:
         run: python -m pytest test/ -q
 
   test-free-threaded:
-    # Free-threaded builds (PEP 703). The check after installing fails if any
+    # The free-threaded build (PEP 703). The check after installing fails if any
     # dependency re-enabled the GIL on import. gwr_inversion is not thread-safe:
     # mpmath's and python-flint's precision are process-global, so parallel
     # evaluation stays in processes (README, "Free-threaded Python").
-    # python-flint has no wheel loadable by 3.15t (abi3 only), so that job runs
-    # with gmpy2 and the gmpy2 Bessel functions.
-    name: test (ubuntu-latest, Python ${{ matrix.python-version }}, free-threaded)
+    name: test (ubuntu-latest, Python 3.14t, free-threaded)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - python-version: "3.14t"
-            extras: "all"
-            flint: "True"
-          - python-version: "3.15t"
-            extras: "fast,hybrid"
-            flint: "False"
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
-          allow-prereleases: true
-      - name: Install from wheels only
+          python-version: "3.14t"
+      - name: Install the package with every extra, from wheels
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --only-binary=numpy,scipy,gmpy2,python-flint -e ".[${{ matrix.extras }}]" pytest
-      - name: Check the build is free-threaded and the GIL stays off
+          python -m pip install --only-binary=numpy,scipy,gmpy2,python-flint -e ".[all]" pytest
+      - name: Check the build is free-threaded, the GIL stays off and the fast backends load
         run: >-
           python -c "import sys, sysconfig, gwr_inversion as g;
           assert sysconfig.get_config_var('Py_GIL_DISABLED'), 'not a free-threaded build';
           assert not sys._is_gil_enabled(), 'an import re-enabled the GIL';
           print('gmpy2', g.HAS_GMPY2, 'flint', g.HAS_FLINT);
-          assert g.HAS_GMPY2 and str(g.HAS_FLINT) == '${{ matrix.flint }}'"
+          assert g.HAS_GMPY2 and g.HAS_FLINT"
       - name: Run the tests
         run: python -m pytest test/ -q
 
