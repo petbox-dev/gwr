@@ -53,3 +53,4 @@ Sorted by severity, then oldest first.
 
 | Item | Closed | Settled by |
 |---|---|---|
+| [parallel-chunks-ignore-shared-nodes](closed/parallel-chunks-ignore-shared-nodes.md) | 2026-10-31 | Measured: node-aware chunks compute fewer Bessel values but run slower than interleaving |

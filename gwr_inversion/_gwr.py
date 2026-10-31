@@ -321,6 +321,104 @@ def gwr(
     return result
 
 
+def _validate_functions(fns: Any) -> list[Callable[..., Any]]:
+    """The functions of a ``gwr_batch`` call as a list; TypeError / ValueError otherwise."""
+    if callable(fns):
+        raise TypeError("gwr_batch takes a sequence of functions; for one function use gwr()")
+    if not isinstance(fns, Iterable):
+        raise TypeError(f"gwr_batch takes a sequence of functions, got {type(fns).__name__}")
+    functions = list(fns)
+    if not functions:
+        raise ValueError("gwr_batch needs at least one function")
+    for function in functions:
+        if not callable(function):
+            raise TypeError(f"gwr_batch: every item must be callable, got {function!r}")
+    return functions
+
+
+def gwr_batch(
+    fns: Iterable[Callable[[float], Any] | Callable[[float, int], Any]],
+    time: float | Iterable[float] | np.ndarray[Any, Any],
+    M: int = 32,
+    precin: int | None = None,
+    backend: str = "auto",
+    workers: int = 1,
+    dtype: str = "float",
+    refine: bool = False,
+    refine_threshold: float = 1e-4,
+) -> np.ndarray[Any, Any]:
+    """
+    ``gwr`` for several Laplace-domain functions on one time grid.
+
+    Row ``i`` of the result is bit-identical to ``gwr(fns[i], time, ...)`` with
+    the same options. The functions are evaluated time-major (every function at
+    one time before the next), so functions that ask for the same Bessel
+    arguments at the GWR nodes ``s = k ln2 / t`` (models that differ only away
+    from the well: outer radius, boundary, skin, storage) compute them once.
+    With ``workers > 1`` that holds inside each worker: one dispatch, one
+    interleaved chunk of the times per worker, every function in it.
+
+    Parameters
+    ----------
+    fns : sequence of callables
+        Laplace-domain functions, as for ``gwr``. Each must be picklable when
+        ``workers > 1``.
+    time, M, precin, backend, workers, dtype, refine, refine_threshold
+        As for ``gwr``. ``refine`` applies to each row by the rule ``gwr`` uses.
+
+    Returns
+    -------
+    ndarray
+        Shape ``(len(fns), len(time))`` (``(len(fns),)`` for a scalar time),
+        float64 for ``dtype='float'`` and object (mpf) for ``dtype='mpf'``.
+    """
+    if dtype not in ("float", "mpf"):
+        raise ValueError(f"dtype must be 'float' or 'mpf', got {dtype!r}")
+    functions = _validate_functions(fns)
+    time = _materialize_time(time)
+    # Same rules as _gwr_core: a scalar or a 0-d array is one point and never
+    # goes to the pool.
+    scalar = False
+    single_point = True
+    if isinstance(time, np.ndarray):
+        times: list[Any] = [time.item()] if time.ndim < 1 else list(time)
+        single_point = time.ndim < 1
+    elif isinstance(time, list):
+        times = time
+        single_point = False
+    else:
+        times = [time]
+        scalar = True
+    parallel = workers > 1 and not single_point
+
+    precision_digits = round(21 * M / 10) if precin is None else precin
+    ops = get_ops(backend)
+    with mp.workdps(precision_digits), gmpy2_precision(precision_digits):
+        if parallel:
+            from ._parallel import parallel_gwr_batch
+            by_time = parallel_gwr_batch(functions, times, M, precision_digits, backend, workers)
+        else:
+            by_time = [[gwr_single(function, t, M, precision_digits, ops) for function in functions]
+                       for t in times]
+        values = [[ops["to_mpf"](by_time[j][i], precision_digits) for j in range(len(times))]
+                  for i in range(len(functions))]
+    if dtype == "float":
+        result = np.array([[float(value) for value in row] for row in values],
+                          dtype=np.float64).reshape(len(functions), len(times))
+    else:
+        # Filled row by row: np.array would try to unpack the mpf values.
+        result = np.empty((len(functions), len(times)), dtype=object)
+        for i, row in enumerate(values):
+            result[i, :] = row
+
+    if refine and not scalar:
+        for i, function in enumerate(functions):
+            result[i] = _refine_low_signal(
+                function, time, result[i], M, precin, backend, workers, dtype,
+                refine_threshold)
+    return result[:, 0] if scalar else result
+
+
 def talbot(
     fn: Callable[[float], Any],
     time: float | Iterable[float] | np.ndarray[Any, Any],

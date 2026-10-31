@@ -25,8 +25,8 @@ results inside a transform.
 
 | Category | Members |
 |---|---|
-| Inversion | [gwr](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#gwr), [talbot](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#talbot) |
-| Models | [Model](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model), [LaplaceFunction](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#laplacefunction), [OUTPUTS](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#outputs), [Geometry](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry) |
+| Inversion | [gwr](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#gwr), [gwr_batch](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#gwr_batch), [talbot](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#talbot) |
+| Models | [Model](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model), [evaluate](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#evaluate), [LaplaceFunction](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#laplacefunction), [OUTPUTS](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#outputs), [Geometry](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry) |
 | Model outputs | [pressure](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model), [rate](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model), [derivative](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model), [cumulative](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model), [hybrid_rate](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model), [laplace](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model), [laplace_pressure](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model) |
 | Geometries | [RadialInfinite](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#radialinfinite), [RadialNoFlow](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#radialnoflow), [RadialConstantPressure](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#radialconstantpressure), [LinearInfinite](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#linearinfinite), [LinearNoFlow](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#linearnoflow), [LinearConstantPressure](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#linearconstantpressure), [FractureInfinite](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#fractureinfinite), [FractureNoFlow](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#fracturenoflow), [FractureConstantPressure](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#fractureconstantpressure) |
 | Effects | [DualPorosity](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#dualporosity), [Skin](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#skin), [WellboreStorage](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#wellborestorage), [VariableWellboreStorage](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#variablewellborestorage) |
@@ -150,6 +150,22 @@ use (about 1.5 s on Windows) and is reused by later calls; `shutdown_pool()`
 releases it. `fn` must be picklable: a module-level function or a
 `model.laplace(...)` result, not a lambda. Parallel results are bit-identical
 to sequential ones.
+
+Several models on one time grid go in one call:
+
+```python
+from gwr_inversion import Model, RadialNoFlow, evaluate
+
+models = [Model(RadialNoFlow(outer_radius)) for outer_radius in (2, 5, 10, 20, 50)]
+table = evaluate(models, time, M=16, workers=4)   # one row per model
+```
+
+Each row equals that model's own `pressure(time, M=16)`. Models that differ only
+away from the well (outer radius, boundary, skin, storage) share the Bessel work
+at every time point, and with `workers > 1` the call is one dispatch, so the
+sharing holds inside each worker: 1.5 to 1.7 times faster than one parallel call
+per model on a 6 by 21 influence table. `gwr_batch(fns, time, ...)` does the
+same for plain Laplace-domain functions.
 
 ### Fixed Talbot
 

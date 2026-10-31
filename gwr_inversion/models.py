@@ -537,3 +537,46 @@ class LaplaceFunction:
     def __call__(self, s: Any) -> Any:
         """The output's Laplace-domain value at ``s``."""
         return _OUTPUT_TRANSFORMS[self.output](self.model.laplace_pressure(s), s)
+
+
+def evaluate(
+    models: Iterable[Model], time: Any, output: str = "pressure", M: int = 32,
+    **gwr_options: Any,
+) -> np.ndarray[Any, Any]:
+    """
+    One output of several models on one time grid: ``gwr_batch`` over
+    ``model.laplace(output)``.
+
+    Row ``i`` is bit-identical to ``models[i].pressure(time, M, ...)`` (or
+    ``rate``, ``cumulative``, ``derivative``). Models that differ only away
+    from the well (outer radius, boundary, skin, storage) share the Bessel
+    values at each GWR node, in one process or inside each worker.
+
+    ``output`` is one of ``OUTPUTS``. ``"derivative"`` returns the Bourdet
+    derivative ``t dp_wD/dt``, as ``Model.derivative`` does, and supports
+    ``dtype='float'`` only. Returns shape ``(len(models), len(time))``, or
+    ``(len(models),)`` for a scalar time.
+    """
+    from ._gwr import gwr_batch
+
+    if isinstance(models, Model):
+        raise TypeError("evaluate takes a sequence of models; for one model call its "
+                        "pressure(), rate(), cumulative() or derivative()")
+    model_list = list(models)
+    for model in model_list:
+        if not isinstance(model, Model):
+            raise TypeError(f"evaluate: every item must be a Model, got {model!r}")
+    if output not in OUTPUTS:
+        raise ValueError(f"output must be one of {OUTPUTS}, got {output!r}")
+    if output == "derivative" and gwr_options.get("dtype", "float") != "float":
+        raise ValueError("evaluate(..., output='derivative') supports dtype='float' only")
+    if isinstance(time, Iterable) and not isinstance(time, np.ndarray):
+        time = list(time)  # read twice for the derivative: by gwr_batch and by the product
+    values = gwr_batch([model.laplace(output) for model in model_list], time, M, **gwr_options)
+    if output != "derivative":
+        return values
+    # gwr drops length-1 axes and returns 0-d input as one point; so does ravel.
+    # A scalar time gives 1-d values (one per model) and a 0-d ravel.
+    t: np.ndarray[Any, Any] = np.ravel(np.asarray(time, dtype=np.float64))
+    product: np.ndarray[Any, Any] = t * values if values.ndim == 2 else t[0] * values
+    return product
