@@ -41,9 +41,13 @@ except ImportError:
     HAS_FLINT = False
 
 
-# Distinct (argument, precision) pairs kept by the order-0/1 cache. A Laplace
-# transform evaluates a handful of Bessel arguments per s.
-_ORDER_01_CACHE_SIZE = 32
+# Distinct (argument, precision) pairs kept by the order-0/1 cache. Models that
+# differ only away from the well (outer radius, boundary type, skin, storage)
+# evaluate the same Bessel arguments sqrt(s) at the same nodes s = k ln2 / t, so
+# a cache that holds every node of one curve (2M per time point) lets the next
+# model reuse them all: 1.6-1.9x on a 6 x 21 influence table, single process.
+# One entry is about 1.3 kB at M = 32 and 4.4 kB at M = 1024 (5 and 17 MiB full).
+_ORDER_01_CACHE_SIZE = 4096
 
 # A deficit larger than this is treated as "no finite bound" (rel_accuracy_bits
 # returns about -2^63 for a ball containing zero or infinity).

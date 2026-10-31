@@ -311,7 +311,11 @@ the current `mp.prec`. Backends in order, each declining what it does not cover:
 ### cache_clear
 
 `cache_clear()` empties the internal caches: the order-0/1 Bessel values and the
-Gaver integer tables (about 54 MB at M = 1024, per process).
+Gaver integer tables, per process. The Bessel cache keeps up to 4096 arguments
+(about 5 MB at M = 32, 17 MB at M = 1024), enough for every node of a curve, so
+models that share a time grid and differ only away from the well (outer radius,
+boundary, skin, storage) reuse each other's Bessel values at `sqrt(s)`. The
+Gaver tables take about 54 MB at M = 1024.
 
 ### shutdown_pool
 
