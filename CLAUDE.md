@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `gwr-inversion` — Python package for numerical inversion of Laplace transforms. Implements the Gaver-Wynn-Rho algorithm (Valkó & Abate, 2004) and wraps mpmath's Fixed Talbot method.
 
-Public API: `gwr(fn, time, M=32, precin=None, backend="auto", workers=1, dtype="float", refine=False, refine_threshold=1e-4)`, `talbot(fn, time, degree=32)`, `besselk(n, x)`, `besseli(n, x)`, `Model(geometry, *effects)` (see `models.py`).
+Public API: `gwr(fn, time, M=32, precin=None, backend="auto", workers=1, dtype="float", refine=False, refine_threshold=1e-4)`, `gwr_batch(fns, time, ...)` (several functions on one grid, rows bit-identical to `gwr`), `talbot(fn, time, degree=32)`, `besselk(n, x)`, `besseli(n, x)`, `Model(geometry, *effects)` and `evaluate(models, time, output="pressure", M=32, **gwr_options)` (see `models.py`).
 
 ## Build & Install
 
@@ -18,7 +18,7 @@ pip install -e ".[hybrid]" # scipy: needed by hybrid_rate / Model.hybrid_rate
 pip install -e ".[all]"    # all three
 ```
 
-Dependencies: `numpy>=1.21.3`, `mpmath>=1.1.0`. Optional: `gmpy2>=2.2.0`, `python-flint>=0.9.0`, `scipy>=1.7.2` (floors tested by the `minimum-versions` CI job). Requires Python >=3.10 (python-flint 0.9 needs it). CI: `.github/workflows/ci.yml`.
+Dependencies: `numpy>=1.26.0`, `mpmath>=1.2.1`. Optional: `gmpy2>=2.2.0`, `python-flint>=0.9.0`, `scipy>=1.11.2` (floors: first releases with Python 3.12 wheels, tested by the `minimum-versions` CI job; the main matrix tests the latest releases). Requires Python >=3.12 (3.10 is end of life; numpy and python-flint set no higher floor). Free-threaded 3.14t is tested (`test-free-threaded`); the package is not thread-safe (mpmath and python-flint precision are process-global), so parallelism stays in processes. CI: `.github/workflows/ci.yml`.
 
 ## Testing
 
@@ -60,10 +60,10 @@ gwr_inversion/
 - **`_numeric.py`** — `positive_real(x)` (the domain the fast backends accept), `TARGET_GUARD_BITS` and the other precision-loop constants, `LOG2_E`. Switch a backend off at run time with `_flint.HAS_FLINT` or `_gmpy2_bessel.HAS_GMPY2_BESSEL` (read at call time; see `test/benchmark.py`).
 - **`_gmpy2_bessel.py`** — gmpy2 K_0, K_1, I_0, I_1. Series path adds at least `2x log2(e)` guard bits; asymptotic expansion once `2x log2(e) > mp.prec + 16`. Working precision derives from `mp.prec`, not the gmpy2 context.
 - **`_gwr.py`** — `gwr_single(fn, time, M, precin, ops)` implements the GWR algorithm for one time point using the ops dict. User's `fn` always receives mpmath types; backend conversion happens transparently.
-- **`_parallel.py`** — `parallel_gwr()` dispatches one interleaved chunk of time points per worker to a persistent `ProcessPoolExecutor` (created on first use, reused while the pool size `min(workers, cpu_count)` is unchanged, `shutdown_pool()` / atexit to release). Requires picklable `fn` (module-level functions, not lambdas).
+- **`_parallel.py`** — `parallel_gwr()` / `parallel_gwr_batch()` (via `_map_interleaved`) dispatch one interleaved chunk of time points per worker; the batch worker evaluates every function at a time before the next (time-major, so they share that time's Bessel nodes through the order-0/1 cache) to a persistent `ProcessPoolExecutor` (created on first use, reused while the pool size `min(workers, cpu_count)` is unchanged, `shutdown_pool()` / atexit to release). Requires picklable `fn` (module-level functions, not lambdas).
 - **`_arb_transforms.py`** — `lap_transform` with `radial_inf` or a linear geometry runs entirely in ARB balls (one conversion in, one out). Bounded radial and fractured geometries stay on the mpf path (measured no gain in ARB); their outer boundary enters through `_bessel.bessel_k_over_i`, evaluated only to the bits it contributes.
-- **`_modifiers.py`** — `apply_dual_porosity`, `apply_skin`, `apply_wbs`, `apply_variable_wbs`, `effective_s` (step 1) and `WellboreEffects` (skin then storage, steps 3-4). Plain `+ - * / **`, so the mpf compositor, the ARB compositor and the generic `Model` path share one copy; `transforms` re-exports them.
-- **`models.py`** — `Model(geometry, *effects)` frozen dataclass; geometries declare `regions`; effects have a level (region: `DualPorosity`; wellbore: `Skin`, `WellboreStorage`, `VariableWellboreStorage`). Built-in geometries delegate to `transforms.compose` (keeps the ARB path; the `WellboreEffects` bundle is built once per model); user `Geometry` subclasses use the generic path. `model.laplace(output)` returns a picklable `LaplaceFunction`.
+- **`_modifiers.py`** — `apply_dual_porosity`, `apply_skin`, `apply_wbs`, `apply_variable_wbs`, `effective_s` (step 1), `effective_radius_scale` / `warn_if_unstable` (effective-radius skin; S<0 with storage), and `WellboreEffects` (skin then storage, steps 3-4; with an effective-radius skin it also owns the geometry's `geometry_scale` / `geometry_parameters`). Plain `+ - * / **`, so the mpf compositor, the ARB compositor and the generic `Model` path share one copy; `transforms` re-exports them.
+- **`models.py`** — `Model(geometry, *effects)` frozen dataclass; geometries declare `regions`; effects have a level (region: `DualPorosity`; wellbore: `Skin`, `EffectiveRadiusSkin`, `WellboreStorage`, `VariableWellboreStorage`). Built-in geometries delegate to `transforms.compose` (keeps the ARB path; the `WellboreEffects` bundle is built once per model); user `Geometry` subclasses use the generic path. `model.laplace(output)` returns a picklable `LaplaceFunction`.
 - **`_talbot.py`** — Thin wrapper around `mpmath.invertlaplace(method='talbot')`.
 
 Key patterns:

@@ -11,9 +11,10 @@ A model is a geometry plus effects::
 
 Every effect has a level. Region effects (``DualPorosity``) change the
 Laplace variable of one region of the geometry, ``s -> s_eff``; wellbore
-effects (``Skin``, ``WellboreStorage``, ``VariableWellboreStorage``) act on
-the sandface pressure. The composition order is fixed by level: region
-effects, then the geometry, then skin, then storage. Every built-in geometry
+effects (``Skin``, ``EffectiveRadiusSkin``, ``WellboreStorage``,
+``VariableWellboreStorage``) act on the sandface pressure. The composition
+order is fixed by level: region effects, then the geometry, then skin, then
+storage. Every built-in geometry
 has one region, ``"reservoir"``; multi-region geometries (trilinear, EFR)
 will name more.
 
@@ -25,12 +26,12 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import Any, ClassVar
+from typing import Any, ClassVar, TypeGuard
 
 import numpy as np
 
 from . import _modifiers, transforms
-from ._gwr import gwr
+from ._gwr import _materialize_time, gwr
 
 RESERVOIR = "reservoir"
 
@@ -324,6 +325,26 @@ class Skin:
 
 
 @dataclass(frozen=True)
+class EffectiveRadiusSkin:
+    """Skin S as an effective wellbore radius r_w e^{-S}: the radial geometry is
+    evaluated from that radius, ``psd(s) = rho^2 psd'(rho^2 s)`` with
+    ``r_eD' = r_eD / rho``, ``rho = e^{-S}`` (``_modifiers.effective_radius_scale``).
+
+    The skin model of the C_D e^{2S} type curves (Gringarten et al. 1979), and
+    the one for a stimulated well (S < 0) with storage: ``Skin`` composed with
+    storage then has a growing mode. Radial geometries only.
+    """
+
+    skin: float
+    level: ClassVar[str] = "wellbore"
+
+    def __post_init__(self) -> None:
+        """Reject a skin outside +-MAX_EFFECTIVE_RADIUS_SKIN (rho^2 would overflow a double)."""
+        _require_in_range("skin", self.skin, -_modifiers.MAX_EFFECTIVE_RADIUS_SKIN,
+                          _modifiers.MAX_EFFECTIVE_RADIUS_SKIN)
+
+
+@dataclass(frozen=True)
 class WellboreStorage:
     """Constant wellbore storage, ``storage`` = C_D > 0 (``transforms.apply_wbs``)."""
 
@@ -358,7 +379,15 @@ class VariableWellboreStorage:
         _require_in_range("change_rate", self.change_rate, -math.inf, math.inf)
 
 
-Effect = DualPorosity | Skin | WellboreStorage | VariableWellboreStorage
+Effect = (DualPorosity | Skin | EffectiveRadiusSkin | WellboreStorage
+          | VariableWellboreStorage)
+
+
+def _uses_compose(geometry: Geometry) -> TypeGuard[BuiltinGeometry]:
+    """True for an unmodified built-in geometry (one ``transforms.compose`` call)."""
+    return (isinstance(geometry, BuiltinGeometry)
+            and type(geometry).laplace_pressure is BuiltinGeometry.laplace_pressure
+            and geometry.regions == (RESERVOIR,))
 
 
 def _validate(geometry: Any, effects: tuple[Any, ...]) -> None:
@@ -380,12 +409,21 @@ def _validate(geometry: Any, effects: tuple[Any, ...]) -> None:
             porosity_regions.append(effect.region)
         elif isinstance(effect, Skin):
             skin_count += 1
+        elif isinstance(effect, EffectiveRadiusSkin):
+            skin_count += 1
+            # Only transforms.compose applies the effective radius: the generic path
+            # (an overridden laplace_pressure) would drop the skin without a word.
+            if not (_uses_compose(geometry)
+                    and geometry.geometry_function() in transforms.RADIAL_GEOMETRIES):
+                raise ValueError(
+                    "EffectiveRadiusSkin applies to RadialInfinite, RadialNoFlow and "
+                    f"RadialConstantPressure, not {type(geometry).__name__}")
         elif isinstance(effect, (WellboreStorage, VariableWellboreStorage)):
             storage_count += 1
         else:
             raise TypeError(f"unknown effect {effect!r}")
     if skin_count > 1:
-        raise ValueError("at most one Skin")
+        raise ValueError("at most one skin effect (Skin or EffectiveRadiusSkin)")
     if storage_count > 1:
         raise ValueError(
             "at most one wellbore storage effect (WellboreStorage or VariableWellboreStorage)")
@@ -393,13 +431,18 @@ def _validate(geometry: Any, effects: tuple[Any, ...]) -> None:
 
 def _wellbore_effects(effects: tuple[Effect, ...]) -> _modifiers.WellboreEffects:
     """The skin and storage effects of a validated model as one bundle."""
-    skin = next((effect.skin for effect in effects if isinstance(effect, Skin)), 0.0)
+    skin_effect = next((effect for effect in effects
+                        if isinstance(effect, (Skin, EffectiveRadiusSkin))), None)
+    skin = 0.0 if skin_effect is None else skin_effect.skin
+    effective_radius = isinstance(skin_effect, EffectiveRadiusSkin)
     storage = next((effect for effect in effects
                     if isinstance(effect, (WellboreStorage, VariableWellboreStorage))), None)
     if isinstance(storage, VariableWellboreStorage):
         return _modifiers.WellboreEffects(
-            skin, storage.storage, storage.storage_change_ratio, storage.change_rate)
-    return _modifiers.WellboreEffects(skin, 0.0 if storage is None else storage.storage)
+            skin, storage.storage, storage.storage_change_ratio, storage.change_rate,
+            effective_radius)
+    return _modifiers.WellboreEffects(skin, 0.0 if storage is None else storage.storage,
+                                      effective_radius=effective_radius)
 
 
 # ---------------------------------------------------------------------------
@@ -429,11 +472,10 @@ class Model:
         object.__setattr__(self, "effects", tuple(effects))
         object.__setattr__(self, "dual_porosity_by_region", {
             effect.region: effect for effect in effects if isinstance(effect, DualPorosity)})
-        object.__setattr__(self, "wellbore", _wellbore_effects(effects))
-        object.__setattr__(self, "uses_compose", (
-            isinstance(geometry, BuiltinGeometry)
-            and type(geometry).laplace_pressure is BuiltinGeometry.laplace_pressure
-            and geometry.regions == (RESERVOIR,)))
+        wellbore = _wellbore_effects(effects)
+        _modifiers.warn_if_unstable(wellbore.skin, wellbore.storage, wellbore.effective_radius)
+        object.__setattr__(self, "wellbore", wellbore)
+        object.__setattr__(self, "uses_compose", _uses_compose(geometry))
 
     def laplace_pressure(self, s: Any) -> Any:
         """
@@ -489,8 +531,7 @@ class Model:
             raise ValueError(
                 "derivative() supports dtype='float' only; for mpf output use "
                 "gwr(model.laplace('derivative'), ...) and multiply by t")
-        if isinstance(time, Iterable) and not isinstance(time, np.ndarray):
-            time = list(time)  # read twice: by gwr and by the multiplication below
+        time = _materialize_time(time)  # read twice: by gwr and by the multiplication below
         values = gwr(self.laplace("derivative"), time, M, **gwr_options)
         if isinstance(values, np.ndarray):
             # gwr drops length-1 axes and returns 0-d input as shape (1,); so does ravel
@@ -504,9 +545,9 @@ class Model:
     ) -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any], np.ndarray[Any, Any],
                np.ndarray[Any, Any], np.ndarray[Any, Any]]:
         """``transforms.hybrid_rate`` applied to this model's rate on ``time``."""
-        if isinstance(time, Iterable) and not isinstance(time, np.ndarray):
-            time = list(time)
-        times = np.ravel(np.asarray(time, dtype=np.float64))  # as gwr drops length-1 axes
+        # A generator becomes a list first (np.asarray does not consume one); ravel
+        # as gwr drops length-1 axes.
+        times = np.ravel(np.asarray(_materialize_time(time), dtype=np.float64))
         rate = np.asarray(self.rate(times, M, **gwr_options), dtype=np.float64)
         return transforms.hybrid_rate(rate, times, b=b)
 
@@ -531,9 +572,54 @@ class LaplaceFunction:
 
     def __post_init__(self) -> None:
         """Reject an unknown output here, not at the first evaluation in a worker."""
-        if self.output not in _OUTPUT_TRANSFORMS:
+        if self.output not in OUTPUTS:
             raise ValueError(f"output must be one of {OUTPUTS}, got {self.output!r}")
 
     def __call__(self, s: Any) -> Any:
         """The output's Laplace-domain value at ``s``."""
         return _OUTPUT_TRANSFORMS[self.output](self.model.laplace_pressure(s), s)
+
+
+def evaluate(
+    models: Iterable[Model], time: Any, output: str = "pressure", M: int = 32,
+    **gwr_options: Any,
+) -> np.ndarray[Any, Any]:
+    """
+    One output of several models on one time grid: ``gwr_batch`` over
+    ``model.laplace(output)``.
+
+    Row ``i`` is bit-identical to ``models[i].pressure(time, M, ...)`` (or
+    ``rate``, ``cumulative``, ``derivative``). Models that differ only away
+    from the well (outer radius, boundary, skin, storage) share the Bessel
+    values at each GWR node, in one process or inside each worker.
+
+    ``output`` is one of ``OUTPUTS``. ``"derivative"`` returns the Bourdet
+    derivative ``t dp_wD/dt``, as ``Model.derivative`` does, and supports
+    ``dtype='float'`` only. Returns shape ``(len(models), len(time))``, or
+    ``(len(models),)`` for a scalar time.
+    """
+    from ._gwr import gwr_batch
+
+    if isinstance(models, Model):
+        raise TypeError("evaluate takes a sequence of models; for one model call its "
+                        "pressure(), rate(), cumulative() or derivative()")
+    model_list = list(models)
+    if not model_list:
+        raise ValueError("evaluate needs at least one model")
+    for model in model_list:
+        if not isinstance(model, Model):
+            raise TypeError(f"evaluate: every item must be a Model, got {model!r}")
+    if output not in OUTPUTS:
+        raise ValueError(f"output must be one of {OUTPUTS}, got {output!r}")
+    if output == "derivative" and gwr_options.get("dtype", "float") != "float":
+        raise ValueError("evaluate(..., output='derivative') supports dtype='float' only")
+    time = _materialize_time(time)  # read twice for the derivative: by gwr_batch and the product
+    values = gwr_batch([model.laplace(output) for model in model_list], time, M, **gwr_options)
+    if output != "derivative":
+        return values
+    # gwr drops length-1 axes and returns 0-d input as one point; so does ravel.
+    # A scalar time gives 1-d values (one per model) and a 0-d ravel.
+    time_points: np.ndarray[Any, Any] = np.ravel(np.asarray(time, dtype=np.float64))
+    product: np.ndarray[Any, Any] = (time_points * values if values.ndim == 2
+                                     else time_points[0] * values)
+    return product

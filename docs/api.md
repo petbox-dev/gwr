@@ -11,10 +11,10 @@ All Laplace-domain functions take and return `mpmath` numbers (`mp.mpf`, or
 dimensionless (`t_D`, `p_wD`, `q_D`, `r_eD`, `C_D`, ...), in the usual
 well-test definitions of the cited papers.
 
-- [Inversion](#inversion): [gwr](#gwr), [talbot](#talbot)
-- [Composable models](#composable-models): [Model](#model), [LaplaceFunction](#laplacefunction), [OUTPUTS](#outputs), [Geometry](#geometry)
+- [Inversion](#inversion): [gwr](#gwr), [gwr_batch](#gwr_batch), [talbot](#talbot)
+- [Composable models](#composable-models): [Model](#model), [evaluate](#evaluate), [LaplaceFunction](#laplacefunction), [OUTPUTS](#outputs), [Geometry](#geometry)
 - [Geometries](#geometries): [RadialInfinite](#radialinfinite), [RadialNoFlow](#radialnoflow), [RadialConstantPressure](#radialconstantpressure), [LinearInfinite](#linearinfinite), [LinearNoFlow](#linearnoflow), [LinearConstantPressure](#linearconstantpressure), [FractureInfinite](#fractureinfinite), [FractureNoFlow](#fracturenoflow), [FractureConstantPressure](#fractureconstantpressure)
-- [Effects](#effects): [DualPorosity](#dualporosity), [Skin](#skin), [WellboreStorage](#wellborestorage), [VariableWellboreStorage](#variablewellborestorage)
+- [Effects](#effects): [DualPorosity](#dualporosity), [Skin](#skin), [EffectiveRadiusSkin](#effectiveradiusskin), [WellboreStorage](#wellborestorage), [VariableWellboreStorage](#variablewellborestorage)
 - [Laplace-domain building blocks](#laplace-domain-building-blocks): [lap_transform](#lap_transform), [geometry functions](#geometry-functions), [physics modifiers](#physics-modifiers), [output transforms](#output-transforms)
 - [Rate analysis](#rate-analysis): [hybrid_rate](#hybrid_rate)
 - [Special functions](#special-functions): [besselk / besseli](#besselk--besseli)
@@ -54,6 +54,30 @@ from gwr_inversion import gwr
 
 gwr(lambda s: 1 / (s + 1), 1.0, M=32)        # e^{-1} = 0.36787944117144233
 ```
+
+### gwr_batch
+
+```python
+gwr_batch(fns, time, M=32, precin=None, backend="auto", workers=1,
+          dtype="float", refine=False, refine_threshold=1e-4)
+```
+
+`gwr` for several Laplace-domain functions on one time grid. Row `i` of the
+result is bit-identical to `gwr(fns[i], time, ...)` with the same options;
+`refine` applies to each row by the rule `gwr` uses.
+
+The functions run time-major: all of them at one time before the next. Functions
+that ask for the same Bessel arguments at the GWR nodes `s = k ln2 / t` then
+compute them once; this is the case for models that differ only away from the
+well (outer radius, boundary, skin, storage). With `workers > 1` the call is one
+dispatch: each worker takes one interleaved chunk of the times and evaluates
+every function there, so the sharing holds inside each worker. Every function
+must then be picklable.
+
+Returns an ndarray of shape `(len(fns), len(time))`, or `(len(fns),)` for a
+scalar time: float64 for `dtype="float"`, object (`mp.mpf`) for `dtype="mpf"`.
+Raises `TypeError` for a single callable (use `gwr`) or a non-callable item, and
+`ValueError` for an empty sequence or an unknown `dtype`.
 
 ### talbot
 
@@ -116,6 +140,31 @@ pressure = model.pressure(time, M=16)
 derivative = model.derivative(time, M=16)
 ```
 
+### evaluate
+
+```python
+evaluate(models, time, output="pressure", M=32, **gwr_options)
+```
+
+One output of several models on one time grid: [gwr_batch](#gwr_batch) over
+`model.laplace(output)`. Row `i` is bit-identical to `models[i].pressure(time, M)`
+(or `rate`, `cumulative`, `derivative`). `output` is one of [OUTPUTS](#outputs);
+`"derivative"` returns the Bourdet derivative `t dp_wD/dt` as `Model.derivative`
+does, and supports `dtype="float"` only. `gwr_options` are those of `gwr_batch`.
+
+```python
+import numpy as np
+from gwr_inversion import Model, RadialNoFlow, evaluate
+
+models = [Model(RadialNoFlow(outer_radius)) for outer_radius in (2, 5, 10, 20, 50)]
+time = np.exp(np.linspace(np.log(0.01), np.log(200), 21))
+table = evaluate(models, time, M=7, workers=4)       # shape (5, 21)
+```
+
+On a 6 by 21 bounded-radial table (4 cores, cold caches) `evaluate` with
+`workers=4` took 0.088 s at M = 7 and 0.85 s at M = 32, against 0.152 s and
+1.26 s for one `pressure(..., workers=4)` call per model.
+
 ### LaplaceFunction
 
 ```python
@@ -175,12 +224,24 @@ where it approximates the infinite-conductivity fracture (Gringarten et al. 1974
 | Class | Parameters | Domain | Level |
 |---|---|---|---|
 | <a id="dualporosity"></a>`DualPorosity(interporosity_flow, storativity_ratio, region="reservoir")` | λ, ω (Warren and Root 1963, pseudo-steady state) | λ > 0, 0 < ω < 1 | region |
-| <a id="skin"></a>`Skin(skin)` | S | finite | wellbore |
+| <a id="skin"></a>`Skin(skin)` | S, as `psd + S / s` | finite | wellbore |
+| <a id="effectiveradiusskin"></a>`EffectiveRadiusSkin(skin)` | S, as the effective wellbore radius r_w e^{-S} (radial geometries only) | \|S\| ≤ 350 (e^{-2S} stays a finite double) | wellbore |
 | <a id="wellborestorage"></a>`WellboreStorage(storage)` | C_D | > 0 | wellbore |
 | <a id="variablewellborestorage"></a>`VariableWellboreStorage(storage, storage_change_ratio, change_rate)` | C_D, C_Dd, a_D (Hegeman et al. 1993) | C_D > 0; others finite | wellbore |
 
 The signs of C_Dd and a_D are not restricted; see
 [docs/todo/open/variable-wellbore-storage-sign-domain.md](todo/open/variable-wellbore-storage-sign-domain.md).
+
+A model takes at most one skin effect. `Skin` is the infinitesimal skin of van
+Everdingen and Hurst; `EffectiveRadiusSkin` evaluates the radial geometry from
+the radius r_w e^{-S}, so that `p̄_D(s) = ρ² p̄_D'(ρ² s)` with `r_eD' = r_eD / ρ`
+and `ρ = e^{-S}`, the skin model of the C_D e^{2S} type curves (Gringarten et
+al. 1979). The two agree at late time and differ at early time with storage.
+`Skin(S < 0)` composed with storage puts a pole of `p̄_wD` on the positive real
+axis, so the exact inverse grows without bound and the inversion returns
+something else; `Model` and `lap_transform` warn (`UserWarning`), and
+`EffectiveRadiusSkin` is the form to use for a stimulated well with storage.
+See [docs/wellbore-storage-real-domain.md](wellbore-storage-real-domain.md).
 
 ---
 
@@ -192,7 +253,7 @@ The functional layer under `Model`, for writing transforms by hand.
 
 ```python
 lap_transform(s, geometry_fn, cD=0.0, cDd=None, aD=None, lam=None, omega=None,
-              skin=0.0, **geom_kwargs)
+              skin=0.0, skin_model="infinitesimal", **geom_kwargs)
 ```
 
 `p̄_wD(s)` composed in the standard order: `s_eff` from dual porosity (when
@@ -201,10 +262,18 @@ then constant (`cD`) or variable (`cD`, `cDd`, `aD`) wellbore storage. For
 `radial_inf` and the linear geometries the whole chain runs in ARB ball
 arithmetic when python-flint is installed (same value, faster).
 
+`skin_model="effective_radius"` replaces the `S / s` term by evaluating the
+geometry from the effective wellbore radius (see [Effects](#effects)); it
+applies to `radial_inf`, `radial_bounded_nf` and `radial_bounded_cp`.
+
 Raises `ValueError` when only one of `lam`/`omega` or of `cDd`/`aD` is given,
-when `lam <= 0` or `omega` is outside (0, 1), when `cD` is negative or NaN, or
-when variable storage is given with `cD = 0`. Geometry parameters (`reD`, `xD`)
-are not checked here; `Model` checks them.
+when `lam <= 0` or `omega` is outside (0, 1), when `cD` is negative or NaN,
+when variable storage is given with `cD = 0`, or when `skin_model` is unknown
+or is `"effective_radius"` with a non-radial geometry or \|skin\| > 350. Warns
+(`UserWarning`) for `skin < 0` with `cD > 0` under the infinitesimal model.
+Geometry parameters (`reD`, `xD`) are not checked here; `Model` checks them.
+Under `"effective_radius"` an omitted `reD` is the geometry's default, scaled to
+`reD e^{S}` like a given one.
 
 ```python
 from gwr_inversion import gwr, lap_transform, output_rate, radial_bounded_nf
@@ -242,6 +311,7 @@ contributes none.
 | `apply_skin(psd, s, skin)` | `psd + S / s` |
 | `apply_wbs(psd, s, cD)` | `1 / (1/psd + s² C_D)` |
 | `apply_variable_wbs(psd, s, cD, cDd, aD)` | `W(s) / (1/psd + s² C_D)`, `W = 1 + C_D C_Dd s / (1 + a_D s)` |
+| `effective_radius_scale(skin)` | `ρ² = e^{-2S}`; the compositor evaluates a radial geometry as `ρ² psd(ρ² s, ρ² s_eff, reD=r_eD e^{S})` |
 
 They use only `+ - * / **`, so they also work on ARB balls.
 
@@ -311,7 +381,11 @@ the current `mp.prec`. Backends in order, each declining what it does not cover:
 ### cache_clear
 
 `cache_clear()` empties the internal caches: the order-0/1 Bessel values and the
-Gaver integer tables (about 54 MB at M = 1024, per process).
+Gaver integer tables, per process. The Bessel cache keeps up to 4096 arguments
+(about 5 MiB at M = 32, 17 MiB at M = 1024), enough for every node of a curve, so
+models that share a time grid and differ only away from the well (outer radius,
+boundary, skin, storage) reuse each other's Bessel values at `sqrt(s)`. The
+Gaver tables take about 54 MB at M = 1024.
 
 ### shutdown_pool
 

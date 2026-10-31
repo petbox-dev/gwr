@@ -40,8 +40,10 @@ def _gaver_integers(M: int) -> tuple[list[int], list[list[int]]]:
 
 
 def cache_clear() -> None:
-    """Clear every internal cache: the order-0/1 Bessel values and the Gaver
-    integer tables (about 54 MB at M = 1024, per process)."""
+    """Clear every internal cache: the order-0/1 Bessel values (up to
+    ``_flint._ORDER_01_CACHE_SIZE`` = 4096 arguments, about 5 MiB at M = 32 and
+    17 MiB at M = 1024) and the Gaver integer tables (about 54 MB at M = 1024),
+    per process."""
     _flint.cache_clear()
     _gaver_integers.cache_clear()
 
@@ -145,6 +147,22 @@ def gwr_single(
 # ---------------------------------------------------------------------------
 
 
+def _precision_digits(M: int, precin: int | None) -> int:
+    """Decimal digits of working precision (mp.dps and the backend context):
+    ``precin``, or about 2.1 M, which GWR needs at M terms."""
+    return round(21 * M / 10) if precin is None else precin
+
+
+def _time_points(time: Iterable[Any]) -> tuple[list[Any], bool]:
+    """
+    The points of a materialized, non-scalar ``time`` (``_materialize_time``)
+    and whether it is one point that never goes to the pool: a 0-d array.
+    """
+    if isinstance(time, np.ndarray) and time.ndim < 1:
+        return [time.item()], True
+    return list(time), False
+
+
 def _gwr_core(
     fn: Callable[[float], Any] | Callable[[float, int], Any],
     time: float | Iterable[float] | np.ndarray[Any, Any],
@@ -155,8 +173,7 @@ def _gwr_core(
     dtype: str,
 ) -> Any:
     """Core GWR evaluation without refinement."""
-    # Decimal digits of working precision (mp.dps and the backend context).
-    precision_digits = round(21 * M / 10) if precin is None else precin
+    precision_digits = _precision_digits(M, precin)
     ops = get_ops(backend)
 
     with mp.workdps(precision_digits), gmpy2_precision(precision_digits):
@@ -166,14 +183,8 @@ def _gwr_core(
             return float(value) if dtype == "float" else value
 
         is_array = isinstance(time, np.ndarray)
-        parallel = workers > 1
-        if isinstance(time, np.ndarray) and time.ndim < 1:
-            time = [time.item()]
-            parallel = False
-
-        # ndarray, list or other Iterable
-        times = list(time)
-        if parallel:
+        times, single_point = _time_points(time)
+        if workers > 1 and not single_point:
             from ._parallel import parallel_gwr
             results = parallel_gwr(fn, times, M, precision_digits, backend, workers)
         else:
@@ -244,7 +255,7 @@ def _refine_low_signal(
                     in zip(np.atleast_1d(np.asarray(time, dtype=object)), mask) if refine_point]
     M_high = 2 * M
     # GWR needs about 2.1 M digits; an explicit precin sized for M is too few for 2 M.
-    precin_high = None if precin is None else max(precin, round(21 * M_high / 10))
+    precin_high = None if precin is None else max(precin, _precision_digits(M_high, None))
     refined = _gwr_core(fn, refine_times, M_high, precin_high, backend, workers, dtype)
 
     # Merge refined values back
@@ -318,6 +329,98 @@ def gwr(
             refine_threshold)
 
     return result
+
+
+def _validate_functions(fns: Any) -> list[Callable[..., Any]]:
+    """The functions of a ``gwr_batch`` call as a list; TypeError / ValueError otherwise."""
+    if callable(fns):
+        raise TypeError("gwr_batch takes a sequence of functions; for one function use gwr()")
+    if not isinstance(fns, Iterable):
+        raise TypeError(f"gwr_batch takes a sequence of functions, got {type(fns).__name__}")
+    functions = list(fns)
+    if not functions:
+        raise ValueError("gwr_batch needs at least one function")
+    for function in functions:
+        if not callable(function):
+            raise TypeError(f"gwr_batch: every item must be callable, got {function!r}")
+    return functions
+
+
+def gwr_batch(
+    fns: Iterable[Callable[[float], Any] | Callable[[float, int], Any]],
+    time: float | Iterable[float] | np.ndarray[Any, Any],
+    M: int = 32,
+    precin: int | None = None,
+    backend: str = "auto",
+    workers: int = 1,
+    dtype: str = "float",
+    refine: bool = False,
+    refine_threshold: float = 1e-4,
+) -> np.ndarray[Any, Any]:
+    """
+    ``gwr`` for several Laplace-domain functions on one time grid.
+
+    Row ``i`` of the result is bit-identical to ``gwr(fns[i], time, ...)`` with
+    the same options. The functions are evaluated time-major (every function at
+    one time before the next), so functions that ask for the same Bessel
+    arguments at the GWR nodes ``s = k ln2 / t`` (models that differ only away
+    from the well: outer radius, boundary, skin, storage) compute them once.
+    With ``workers > 1`` that holds inside each worker: one dispatch, one
+    interleaved chunk of the times per worker, every function in it.
+
+    Parameters
+    ----------
+    fns : sequence of callables
+        Laplace-domain functions, as for ``gwr``. Each must be picklable when
+        ``workers > 1``.
+    time, M, precin, backend, workers, dtype, refine, refine_threshold
+        As for ``gwr``. ``refine`` applies to each row by the rule ``gwr`` uses.
+
+    Returns
+    -------
+    ndarray
+        Shape ``(len(fns), len(time))`` (``(len(fns),)`` for a scalar time),
+        float64 for ``dtype='float'`` and object (mpf) for ``dtype='mpf'``.
+    """
+    if dtype not in ("float", "mpf"):
+        raise ValueError(f"dtype must be 'float' or 'mpf', got {dtype!r}")
+    functions = _validate_functions(fns)
+    time = _materialize_time(time)
+    # As in _gwr_core: a scalar or a 0-d array is one point and never goes to
+    # the pool; only a scalar returns one value per function.
+    if isinstance(time, Iterable):
+        times, single_point = _time_points(time)
+        scalar = False
+    else:
+        times, single_point, scalar = [time], True, True
+    parallel = workers > 1 and not single_point
+
+    precision_digits = _precision_digits(M, precin)
+    ops = get_ops(backend)
+    with mp.workdps(precision_digits), gmpy2_precision(precision_digits):
+        if parallel:
+            from ._parallel import parallel_gwr_batch
+            by_time = parallel_gwr_batch(functions, times, M, precision_digits, backend, workers)
+        else:
+            by_time = [[gwr_single(function, t, M, precision_digits, ops) for function in functions]
+                       for t in times]
+        values = [[ops["to_mpf"](by_time[j][i], precision_digits) for j in range(len(times))]
+                  for i in range(len(functions))]
+    if dtype == "float":
+        result = np.array([[float(value) for value in row] for row in values],
+                          dtype=np.float64).reshape(len(functions), len(times))
+    else:
+        # Filled row by row: np.array would try to unpack the mpf values.
+        result = np.empty((len(functions), len(times)), dtype=object)
+        for i, row in enumerate(values):
+            result[i, :] = row
+
+    if refine and not scalar:
+        for i, function in enumerate(functions):
+            result[i] = _refine_low_signal(
+                function, time, result[i], M, precin, backend, workers, dtype,
+                refine_threshold)
+    return result[:, 0] if scalar else result
 
 
 def talbot(

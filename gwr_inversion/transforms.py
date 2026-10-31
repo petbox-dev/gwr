@@ -17,6 +17,7 @@ References
 """
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable
 from typing import Any
 
@@ -40,12 +41,15 @@ from ._bessel import (
     besselk0_integral as _besselk0_integral,
 )
 from ._modifiers import (
+    MAX_EFFECTIVE_RADIUS_SKIN,
     WellboreEffects,
     apply_dual_porosity,
     apply_skin,
     apply_variable_wbs,
     apply_wbs,
+    effective_radius_scale,
     effective_s,
+    warn_if_unstable,
 )
 
 
@@ -639,6 +643,22 @@ _ARB_GEOMETRIES: dict[Callable[..., Any], Callable[..., Any]] = {
 }
 
 
+# The geometries whose dimensionless time and outer radius are defined on r_w,
+# so that a skin can be an effective wellbore radius r_w e^{-S}.
+RADIAL_GEOMETRIES: tuple[Callable[..., Any], ...] = (
+    radial_inf, radial_bounded_nf, radial_bounded_cp)
+
+# The outer radius each bounded radial geometry uses when reD is omitted, read from
+# its signature: an effective-radius skin must scale that value too (r_eD e^{S}).
+_DEFAULT_OUTER_RADIUS: dict[Callable[..., Any], float] = {
+    geometry: inspect.signature(geometry).parameters["reD"].default
+    for geometry in (radial_bounded_nf, radial_bounded_cp)}
+
+# The values lap_transform accepts for skin_model: S / s added to the sandface
+# pressure, or the geometry evaluated from the effective radius r_w e^{-S}.
+SKIN_MODELS: tuple[str, ...] = ("infinitesimal", "effective_radius")
+
+
 def lap_transform(
     s: Any,
     geometry_fn: Callable[..., Any],
@@ -648,6 +668,7 @@ def lap_transform(
     lam: float | None = None,
     omega: float | None = None,
     skin: float = 0.0,
+    skin_model: str = "infinitesimal",
     **geom_kwargs: Any,
 ) -> Any:
     """
@@ -659,6 +680,14 @@ def lap_transform(
     2. Geometry function: ``psd(s, s_eff, **geom_kwargs)``
     3. Skin: ``psd + skin / s``
     4. Wellbore storage (constant or variable): ``pwd``
+
+    With ``skin_model="effective_radius"`` (radial geometries only) step 3 is
+    replaced by evaluating step 2 from the effective wellbore radius
+    ``r_w e^{-S}``: ``psd(s) = rho^2 psd'(rho^2 s)`` with ``r_eD' = r_eD / rho``,
+    ``rho = e^{-S}`` (``_modifiers.effective_radius_scale``). This is the skin
+    model of the C_D e^{2S} type curves, and the one to use for ``S < 0`` with
+    storage: the ``S / s`` form then has a pole at some ``s > 0`` and its
+    inverse grows without bound (``_modifiers.warn_if_unstable``).
 
     Ozkan, E. and Raghavan, R. 1991. New Solutions for Well-Test-Analysis
     Problems: Part 2 — Computational Considerations and Applications.
@@ -700,6 +729,11 @@ def lap_transform(
         skin : float
             Skin factor ``S``. Default ``0.0``.
 
+        skin_model : str
+            ``"infinitesimal"`` (default): ``psd + S / s``. ``"effective_radius"``:
+            the geometry evaluated from ``r_w e^{-S}``; ``radial_inf``,
+            ``radial_bounded_nf`` and ``radial_bounded_cp`` only.
+
         **geom_kwargs
             Additional keyword arguments passed to ``geometry_fn``
             (e.g., ``reD``, ``xD``).
@@ -736,7 +770,22 @@ def lap_transform(
         raise ValueError(f"variable wellbore storage needs cD > 0, got {cD!r}")
     if not cD >= 0:  # also rejects NaN, which would otherwise read as "no storage"
         raise ValueError(f"cD must be >= 0, got {cD!r}")
-    return compose(s, geometry_fn, WellboreEffects(skin, cD, cDd, aD), lam, omega, geom_kwargs)
+    if skin_model not in SKIN_MODELS:
+        raise ValueError(f"skin_model must be one of {SKIN_MODELS}, got {skin_model!r}")
+    effective_radius = skin_model == "effective_radius"
+    if effective_radius and geometry_fn not in RADIAL_GEOMETRIES:
+        raise ValueError(
+            "skin_model='effective_radius' applies to radial_inf, radial_bounded_nf and "
+            f"radial_bounded_cp, not {getattr(geometry_fn, '__name__', geometry_fn)!r}")
+    if effective_radius:
+        if not abs(skin) <= MAX_EFFECTIVE_RADIUS_SKIN:
+            raise ValueError(f"skin_model='effective_radius' needs |skin| <= "
+                             f"{MAX_EFFECTIVE_RADIUS_SKIN}, got {skin!r}")
+        if geometry_fn in _DEFAULT_OUTER_RADIUS and "reD" not in geom_kwargs:
+            geom_kwargs = {**geom_kwargs, "reD": _DEFAULT_OUTER_RADIUS[geometry_fn]}
+    warn_if_unstable(skin, cD, effective_radius)
+    return compose(s, geometry_fn, WellboreEffects(skin, cD, cDd, aD, effective_radius),
+                   lam, omega, geom_kwargs)
 
 
 def compose(
@@ -761,8 +810,15 @@ def compose(
             if result is not None:
                 return result
 
-    # 1. Naturally fractured: s -> s_eff;  2. geometry;  3-4. skin, then storage
-    pressure = geometry_fn(s, effective_s(s, lam, omega), **geometry_parameters)
+    # 1. Naturally fractured: s -> s_eff;  2. geometry;  3-4. skin, then storage.
+    # An effective-radius skin evaluates the geometry at rho^2 s and r_eD / rho, times rho^2.
+    s_eff = effective_s(s, lam, omega)
+    scale = wellbore.geometry_scale()
+    if scale != 1.0:
+        geometry_parameters = wellbore.geometry_parameters(geometry_parameters)
+        pressure = scale * geometry_fn(s * scale, s_eff * scale, **geometry_parameters)
+    else:
+        pressure = geometry_fn(s, s_eff, **geometry_parameters)
     return wellbore.apply(pressure, s)
 
 

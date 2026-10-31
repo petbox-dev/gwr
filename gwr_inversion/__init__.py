@@ -1,19 +1,27 @@
 """
 GWR Algorithm Numerical Laplace Inversion.
 
-Provides gwr() for Gaver-Wynn-Rho inversion and talbot() for Fixed Talbot.
+Provides gwr() for Gaver-Wynn-Rho inversion, gwr_batch() for several functions on
+one time grid, and talbot() for Fixed Talbot.
 """
 
 from ._bessel import besseli, besselk
 from ._flint import HAS_FLINT
 from ._gmpy2 import HAS_GMPY2
 from ._gmpy2_bessel import HAS_GMPY2_BESSEL
-from ._gwr import cache_clear, gwr, talbot
-from ._modifiers import apply_dual_porosity, apply_skin, apply_variable_wbs, apply_wbs
+from ._gwr import cache_clear, gwr, gwr_batch, talbot
+from ._modifiers import (
+    apply_dual_porosity,
+    apply_skin,
+    apply_variable_wbs,
+    apply_wbs,
+    effective_radius_scale,
+)
 from ._parallel import shutdown_pool
 from .models import (
     OUTPUTS,
     DualPorosity,
+    EffectiveRadiusSkin,
     FractureConstantPressure,
     FractureInfinite,
     FractureNoFlow,
@@ -29,6 +37,7 @@ from .models import (
     Skin,
     VariableWellboreStorage,
     WellboreStorage,
+    evaluate,
 )
 from .transforms import (
     frac_bounded_cp,
