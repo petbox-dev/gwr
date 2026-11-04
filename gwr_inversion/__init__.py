@@ -5,7 +5,7 @@ Provides gwr() for Gaver-Wynn-Rho inversion, gwr_batch() for several functions o
 one time grid, and talbot() for Fixed Talbot.
 """
 
-__version__ = "2.0.1"
+__version__ = "2.1.0"
 
 from ._bessel import besseli, besselk
 from ._flint import HAS_FLINT
