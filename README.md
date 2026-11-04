@@ -25,14 +25,14 @@ results inside a transform.
 
 | Category | Members |
 |---|---|
-| Inversion | [gwr](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#gwr), [talbot](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#talbot) |
-| Models | [Model](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model), [LaplaceFunction](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#laplacefunction), [OUTPUTS](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#outputs), [Geometry](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry) |
+| Inversion | [gwr](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#gwr), [gwr_batch](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#gwr_batch), [talbot](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#talbot) |
+| Models | [Model](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model), [evaluate](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#evaluate), [LaplaceFunction](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#laplacefunction), [OUTPUTS](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#outputs), [Geometry](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry) |
 | Model outputs | [pressure](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model), [rate](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model), [derivative](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model), [cumulative](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model), [hybrid_rate](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model), [laplace](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model), [laplace_pressure](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#model) |
 | Geometries | [RadialInfinite](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#radialinfinite), [RadialNoFlow](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#radialnoflow), [RadialConstantPressure](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#radialconstantpressure), [LinearInfinite](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#linearinfinite), [LinearNoFlow](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#linearnoflow), [LinearConstantPressure](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#linearconstantpressure), [FractureInfinite](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#fractureinfinite), [FractureNoFlow](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#fracturenoflow), [FractureConstantPressure](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#fractureconstantpressure) |
-| Effects | [DualPorosity](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#dualporosity), [Skin](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#skin), [WellboreStorage](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#wellborestorage), [VariableWellboreStorage](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#variablewellborestorage) |
+| Effects | [DualPorosity](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#dualporosity), [Skin](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#skin), [EffectiveRadiusSkin](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#effectiveradiusskin), [WellboreStorage](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#wellborestorage), [VariableWellboreStorage](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#variablewellborestorage) |
 | Compositor | [lap_transform](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#lap_transform) |
 | Geometry Functions | [radial_inf](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry-functions), [radial_bounded_nf](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry-functions), [radial_bounded_cp](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry-functions), [linear_inf](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry-functions), [linear_bounded_nf](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry-functions), [linear_bounded_cp](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry-functions), [frac_inf](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry-functions), [frac_bounded_nf](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry-functions), [frac_bounded_cp](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry-functions) |
-| Physics Modifiers | [apply_dual_porosity](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#physics-modifiers), [apply_skin](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#physics-modifiers), [apply_wbs](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#physics-modifiers), [apply_variable_wbs](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#physics-modifiers) |
+| Physics Modifiers | [apply_dual_porosity](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#physics-modifiers), [apply_skin](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#physics-modifiers), [apply_wbs](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#physics-modifiers), [apply_variable_wbs](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#physics-modifiers), [effective_radius_scale](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#physics-modifiers) |
 | Output Transforms | [output_pressure](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#output-transforms), [output_rate](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#output-transforms), [output_derivative](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#output-transforms), [output_cumulative](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#output-transforms) |
 | Rate Analysis | [hybrid_rate](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#hybrid_rate) |
 | Special Functions | [besselk](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#besselk--besseli), [besseli](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#besselk--besseli) |
@@ -48,8 +48,8 @@ pip install "gwr_inversion[hybrid]"      # + scipy: hybrid_rate / Model.hybrid_r
 pip install "gwr_inversion[all]"         # all three
 ```
 
-Python 3.10 or later. The required dependencies are `numpy` and `mpmath`. The
-optional ones are independent and complementary:
+Python 3.12 or later. The required dependencies are `numpy` (1.26 or later;
+tested through 2.5) and `mpmath`. The optional ones are independent and complementary:
 
 - **gmpy2** (`[fast]`) runs the GWR arithmetic (the Gaver sums and the
   Wynn-rho recursion) in MPFR, and provides a gmpy2 Bessel backend.
@@ -59,6 +59,14 @@ optional ones are independent and complementary:
 - **scipy** (`[hybrid]`) is needed only by `hybrid_rate`.
 
 `[all]` is the recommended install.
+
+**Free-threaded Python** (3.14t) is tested in CI and the GIL stays off after
+import. It brings no speedup here: use `workers` for parallel work, and
+call `gwr` from one thread at a time. mpmath's and python-flint's working
+precision are process-wide settings, so two threads evaluating at once change
+each other's precision. Measured on 3.14t with four threads, up to 17 of the
+126 values of a table came back wrong, by as much as 0.13%; separate processes
+(`workers`) are unaffected.
 
 ## Examples
 
@@ -110,6 +118,15 @@ function itself, for `gwr()` or `talbot()`. A user geometry subclasses
 `Geometry` and implements `laplace_pressure(s, s_eff_by_region)`; see
 [docs/api.md](https://github.com/petbox-dev/gwr/blob/main/docs/api.md#geometry).
 
+Wellbore storage has exact time-domain forms for several of these geometries
+(closed form for linear flow, eigen-series for bounded reservoirs, a real
+integral for infinite radial flow); they are derived and checked against `gwr()`
+in [docs/wellbore-storage-real-domain.md](https://github.com/petbox-dev/gwr/blob/main/docs/wellbore-storage-real-domain.md).
+Combining `Skin(S < 0)` with storage makes the composed model unstable (the
+model warns); a stimulated well with storage takes `EffectiveRadiusSkin(S)`,
+the effective-wellbore-radius skin of the C_D e^{2S} type curves. See the same
+document, section 7.
+
 ### Building a transform by hand
 
 The functional layer under `Model` composes the same pieces:
@@ -150,6 +167,22 @@ use (about 1.5 s on Windows) and is reused by later calls; `shutdown_pool()`
 releases it. `fn` must be picklable: a module-level function or a
 `model.laplace(...)` result, not a lambda. Parallel results are bit-identical
 to sequential ones.
+
+Several models on one time grid go in one call:
+
+```python
+from gwr_inversion import Model, RadialNoFlow, evaluate
+
+models = [Model(RadialNoFlow(outer_radius)) for outer_radius in (2, 5, 10, 20, 50)]
+table = evaluate(models, time, M=16, workers=4)   # one row per model
+```
+
+Each row equals that model's own `pressure(time, M=16)`. Models that differ only
+away from the well (outer radius, boundary, skin, storage) share the Bessel work
+at every time point, and with `workers > 1` the call is one dispatch, so the
+sharing holds inside each worker: 1.5 to 1.7 times faster than one parallel call
+per model on a 6 by 21 influence table. `gwr_batch(fns, time, ...)` does the
+same for plain Laplace-domain functions.
 
 ### Fixed Talbot
 
@@ -230,6 +263,29 @@ at x = 100 (M=32) or x = 200 (M=64).
 The fractured-well solutions need `int_0^z K_0(t) dt` and `int_0^z I_0(t) dt`.
 These use closed forms, not quadrature: modified Struve functions as `1F2`
 series for `K_0`, and `z 1F2(1/2; 1, 3/2; z^2/4)` for `I_0`.
+
+## Changes in 2.1
+
+- Python 3.12 or later is required (3.10 reached end of life in October 2026).
+  The dependency floors are the first releases with Python 3.12 wheels: numpy
+  1.26, scipy 1.11.2 for `[hybrid]`, and mpmath 1.2.1. CI also tests the latest
+  releases (numpy 2.5).
+- New: `gwr_batch()` and `evaluate()` invert several functions or models on one
+  time grid, sharing the Bessel work between models.
+- The order-0/1 Bessel cache holds every node of a curve (4096 arguments, was
+  32), so models on one time grid that differ only away from the well reuse
+  each other's Bessel values even when called one at a time: 1.6 to 1.9 times
+  faster on a 6 by 21 influence table in one process.
+- New: `EffectiveRadiusSkin(S)` and `lap_transform(..., skin_model="effective_radius")`
+  model skin as an effective wellbore radius `r_w e^{-S}` (radial geometries),
+  the form for a stimulated well with storage. `Skin(S < 0)` composed with
+  storage now warns: that model has a pole at some `s > 0` and its inverse grows
+  without bound.
+- New: `docs/wellbore-storage-real-domain.md` derives the time-domain forms of
+  wellbore storage (Mittag-Leffler and erfc for power-law flow, eigen-series for
+  bounded reservoirs, a real integral for infinite radial flow) and
+  `test/test_wbs_real_domain.py` checks `gwr()` against them.
+- CI tests the free-threaded build 3.14t.
 
 ## Changes in 2.0
 

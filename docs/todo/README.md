@@ -48,8 +48,12 @@ Sorted by severity, then oldest first.
 | [sdist-tests-cannot-run](open/sdist-tests-cannot-run.md) | 2026-10-21 | low | The sdist ships test modules but not reference_data.npz, so its tests fail at collection |
 | [package-has-no-py-typed-marker](open/package-has-no-py-typed-marker.md) | 2026-10-21 | low | Fully annotated package ships no py.typed, so users' type checkers see it as untyped |
 | [geometry-defaults-repeated-in-models-and-transforms](open/geometry-defaults-repeated-in-models-and-transforms.md) | 2026-10-21 | low | 0.732, 100 and 1000 defaults are written in both modules with nothing keeping them equal |
+| [wbs-doc-accuracy-rows-not-pinned-by-tests](open/wbs-doc-accuracy-rows-not-pinned-by-tests.md) | 2026-10-31 | low | The wellbore-storage doc's section 6 table cites parameter ranges the tests do not assert |
 
 ## Done
 
 | Item | Closed | Settled by |
 |---|---|---|
+| [free-threaded-python-cannot-parallelize-in-threads](closed/free-threaded-python-cannot-parallelize-in-threads.md) | 2026-10-31 | Measured: threads corrupt results through process-global precision; subinterpreters cannot load numpy, gmpy2 or python-flint |
+| [parallel-chunks-ignore-shared-nodes](closed/parallel-chunks-ignore-shared-nodes.md) | 2026-10-31 | Measured: node-aware chunks compute fewer Bessel values but run slower than interleaving |
+| [negative-skin-with-storage-has-a-growing-mode](closed/negative-skin-with-storage-has-a-growing-mode.md) | 2026-10-20 | `EffectiveRadiusSkin` for stimulated wells with storage; `Skin(S < 0)` with storage warns |

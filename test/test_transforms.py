@@ -77,6 +77,9 @@ def set_backends(monkeypatch: pytest.MonkeyPatch) -> Callable[[bool, bool], None
     return set_flags
 
 
+# S < 0 with storage is in the grid on purpose (the ARB and mpf paths must agree
+# there too); the instability warning it raises is pinned in test_models.py.
+@pytest.mark.filterwarnings("ignore:skin .* < 0 composed with wellbore storage")
 @pytest.mark.skipif(not _flint.HAS_FLINT, reason="python-flint not installed")
 @pytest.mark.parametrize(
     "geometry, parameters, dual_porosity, skin, storage",

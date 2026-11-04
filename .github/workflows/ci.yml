@@ -35,7 +35,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
+        python-version: ["3.12", "3.13", "3.14"]
         include:
           # The persistent process pool uses the default start method: spawn on
           # Windows and macOS, fork on Linux to 3.13 and forkserver from 3.14
@@ -58,6 +58,33 @@ jobs:
       - name: Check the fast backends and scipy are in use
         # Without them their tests skip and the run would still pass.
         run: python -c "import scipy, gwr_inversion as g; print('gmpy2', g.HAS_GMPY2, 'flint', g.HAS_FLINT); assert g.HAS_GMPY2 and g.HAS_FLINT"
+      - name: Run the tests
+        run: python -m pytest test/ -q
+
+  test-free-threaded:
+    # The free-threaded build (PEP 703). The check after installing fails if any
+    # dependency re-enabled the GIL on import (scipy too: the package imports it lazily). gwr_inversion is not thread-safe:
+    # mpmath's and python-flint's precision are process-global, so parallel
+    # evaluation stays in processes (README, "Free-threaded Python").
+    name: test (ubuntu-latest, Python 3.14t, free-threaded)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14t"
+      - name: Install the package with every extra, from wheels
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --only-binary=numpy,scipy,gmpy2,python-flint -e ".[all]" pytest
+      - name: Check the build is free-threaded, the GIL stays off and the fast backends load
+        run: >-
+          python -c "import sys, sysconfig, gwr_inversion as g, scipy;
+          assert sysconfig.get_config_var('Py_GIL_DISABLED'), 'not a free-threaded build';
+          assert not sys._is_gil_enabled(), 'an import re-enabled the GIL';
+          print('gmpy2', g.HAS_GMPY2, 'flint', g.HAS_FLINT);
+          assert g.HAS_GMPY2 and g.HAS_FLINT"
       - name: Run the tests
         run: python -m pytest test/ -q
 
@@ -85,14 +112,14 @@ jobs:
   minimum-versions:
     # Every dependency at the floor pyproject.toml declares (uv lowest-direct reads
     # them from there, so the floors have one source).
-    name: test (ubuntu-latest, Python 3.10, minimum dependency versions)
+    name: test (ubuntu-latest, Python 3.12, minimum dependency versions)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.10"
+          python-version: "3.12"
       - name: Install the lowest allowed versions
         run: |
           python -m pip install --upgrade pip uv
@@ -104,7 +131,7 @@ jobs:
         run: python -m pytest test/ -q
 
   lint:
-    # Python 3.10 is the floor, so mypy checks against the oldest supported
+    # Python 3.12 is the floor, so mypy checks against the oldest supported
     # syntax. Tool versions are pinned: a new ruff release can add default rules.
     name: lint (ruff, mypy --strict)
     runs-on: ubuntu-latest
@@ -113,7 +140,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.10"
+          python-version: "3.12"
       - name: Install
         run: |
           python -m pip install --upgrade pip

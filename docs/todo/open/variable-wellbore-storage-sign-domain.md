@@ -60,3 +60,10 @@ the benchmark and figure parameters.
 - `gwr_inversion/models.py`: `VariableWellboreStorage.__post_init__`
 - `gwr_inversion/transforms.py`: `lap_transform` validation
 - `test/benchmark.py`, `test/generate_figures.py`: VWBS parameters
+
+## Added 2026-10-31
+
+`warn_if_unstable` (`_modifiers.py`) also fires for `Skin(S < 0)` with
+`VariableWellboreStorage`, keyed on the initial `C_D`. Its "grows without bound"
+text is derived for constant storage only; whether variable storage has the same
+positive-real pole is part of this item's open question.
