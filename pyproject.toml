@@ -4,10 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gwr-inversion"
-version = "2.0.1"
+dynamic = ["version"]
 description = "GWR Algorithm Numerical Laplace Inversion"
 readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 authors = [
     { name = "David S. Fulford", email = "petbox.dev@gmail.com" },
@@ -43,6 +44,9 @@ Documentation = "https://github.com/petbox-dev/gwr/blob/main/docs/api.md"
 
 [tool.setuptools]
 packages = ["gwr_inversion"]
+
+[tool.setuptools.dynamic]
+version = { attr = "gwr_inversion.__version__" }
 
 [project.optional-dependencies]
 fast = ["gmpy2>=2.2.0"]  # 2.2: gmpy2.context(ctx, precision=...)

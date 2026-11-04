@@ -4,6 +4,8 @@ GWR Algorithm Numerical Laplace Inversion.
 Provides gwr() for Gaver-Wynn-Rho inversion and talbot() for Fixed Talbot.
 """
 
+__version__ = "2.0.1"
+
 from ._bessel import besseli, besselk
 from ._flint import HAS_FLINT
 from ._gmpy2 import HAS_GMPY2

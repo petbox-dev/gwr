@@ -30,9 +30,9 @@ jobs:
       - name: Check the tag matches the package version
         shell: bash
         run: |
-          package_version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          package_version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' gwr_inversion/__init__.py)
           if [ "${GITHUB_REF_NAME}" != "v${package_version}" ]; then
-            echo "::error::ref ${GITHUB_REF_NAME} does not match pyproject.toml version v${package_version}"
+            echo "::error::ref ${GITHUB_REF_NAME} does not match gwr_inversion.__version__ v${package_version}"
             exit 1
           fi
       - name: Build sdist and wheel
